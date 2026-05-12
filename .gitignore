@@ -12,6 +12,9 @@ aim
 aim.exe
 *.out
 
+# 测试目录
+tEST/
+
 # 环境文件
 .env
 .env.local
