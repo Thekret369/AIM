@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"AIM/internal/model"
 	"sync"
-
-	"github.com/gorilla/websocket"
 )
 
 // Hub 管理所有活跃的 WebSocket 连接
