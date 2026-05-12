@@ -18,26 +18,22 @@
         <a href="javascript:logout()">退出</a>
     </div>
 </div>
-<div class="container">
-    <!-- 会话选择 -->
-    <div style="margin-bottom:12px">
-        <select id="chatType" onchange="switchChat()" style="padding:6px">
-            <option value="user">单聊</option>
-            <option value="group">群聊</option>
-            <option value="broadcast">广播</option>
-        </select>
-        <input type="text" id="targetInput" placeholder="输入对方用户 ID 或群组 ID" style="padding:6px;width:200px">
-        <button class="btn btn-primary" onclick="switchChat()">切换聊天</button>
-        <button class="btn btn-primary" onclick="sendMessage()" style="margin-left:8px">发送(Enter)</button>
+
+<div class="chat-layout">
+    <!-- 左侧边栏 -->
+    <div class="chat-sidebar">
+        <div class="sidebar-tabs">
+            <button class="tab-btn active" onclick="switchSidebarTab('friends')">好友</button>
+            <button class="tab-btn" onclick="switchSidebarTab('groups')">群组</button>
+        </div>
+        <div class="sidebar-list" id="sidebarList"></div>
     </div>
 
-    <div class="chat-box">
-        <div class="chat-header" id="chatHeader">请选择聊天对象</div>
-        <div class="chat-messages" id="chatMessages">
-            <div style="text-align:center;color:#aaa;margin-top:80px">— 消息将显示在这里 —</div>
-        </div>
-        <div class="chat-input">
-            <input type="text" id="msgInput" placeholder="输入消息..." onkeydown="if(event.key==='Enter')sendMessage()">
+    <!-- 右侧聊天区 -->
+    <div class="chat-main">
+        <div class="tab-bar" id="tabBar"></div>
+        <div class="tab-panels" id="tabPanels">
+            <div class="no-chat-placeholder" id="noChatPlaceholder">选择好友或群组开始聊天</div>
         </div>
     </div>
 </div>
@@ -46,122 +42,465 @@
 <script>
 document.getElementById('navUser').textContent = getUserNickname();
 
-let currentChat = { type: 'user', target: 0 };
+// ========================================
+// 核心状态
+// ========================================
+let sidebarMode = 'friends';
+let sidebarFriends = [];       // GET /api/friends 返回
+let sidebarGroups = [];        // GET /api/groups 返回
+let chatTabs = new Map();      // key → TabState
+let activeTabKey = null;
+let unreadCounts = new Map();  // key → number
+let lastMessages = new Map();  // key → message
 
-// 从 URL 参数读取默认聊天对象
-const params = new URLSearchParams(window.location.search);
-const peerParam = params.get('peer');
-if (peerParam) {
-    document.getElementById('targetInput').value = peerParam;
-    switchChat();
+// TabState: { type, targetId, name, messages[], historyPage, hasMore, panelEl, messagesEl, inputEl }
+
+// ========================================
+// 侧边栏
+// ========================================
+async function loadFriends() {
+    try {
+        const data = await api('GET', '/friends');
+        sidebarFriends = data.friends || [];
+    } catch(e) { sidebarFriends = []; }
 }
 
-// WebSocket 消息回调
+async function loadGroups() {
+    try {
+        const data = await api('GET', '/groups');
+        sidebarGroups = data.groups || [];
+    } catch(e) { sidebarGroups = []; }
+}
+
+function switchSidebarTab(mode) {
+    sidebarMode = mode;
+    document.querySelectorAll('.sidebar-tabs .tab-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.textContent === (mode === 'friends' ? '好友' : '群组'));
+    });
+    renderSidebar();
+}
+
+function renderSidebar() {
+    var list = document.getElementById('sidebarList');
+    var html = '';
+
+    if (sidebarMode === 'friends') {
+        // 广播置顶
+        var bcKey = 'broadcast';
+        var bcUnread = unreadCounts.get(bcKey) || 0;
+        var bcPreview = lastMessages.get(bcKey);
+        html += sidebarItemHTML(bcKey, '📢', '广播消息', bcPreview, bcUnread);
+
+        sidebarFriends.forEach(function(f) {
+            var key = 'user:' + f.friend_id;
+            var name = f.remark || ('用户' + f.friend_id);
+            var unread = unreadCounts.get(key) || 0;
+            var preview = lastMessages.get(key);
+            html += sidebarItemHTML(key, name.charAt(0), name, preview, unread);
+        });
+    } else {
+        sidebarGroups.forEach(function(g) {
+            var key = 'group:' + g.id;
+            var unread = unreadCounts.get(key) || 0;
+            var preview = lastMessages.get(key);
+            html += sidebarItemHTML(key, g.name.charAt(0), g.name, preview, unread);
+        });
+    }
+
+    list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#999;">暂无</div>';
+
+    // 绑定点击
+    list.querySelectorAll('.sidebar-item').forEach(function(el) {
+        el.addEventListener('click', function() {
+            var key = this.dataset.key;
+            var type = this.dataset.type;
+            var targetId = parseInt(this.dataset.target) || 0;
+            var name = this.querySelector('.item-name').textContent;
+            openOrSwitchTab(key, type, targetId, name);
+        });
+    });
+}
+
+function sidebarItemHTML(key, avatarChar, name, previewMsg, unread) {
+    var parts = key.split(':');
+    var type = parts[0];
+    var target = parts[1] || 0;
+    var activeClass = (key === activeTabKey) ? ' active' : '';
+    var badgeHTML = unread > 0 ? '<span class="badge" style="display:inline-block">' + unread + '</span>' : '';
+    var previewHTML = previewMsg
+        ? (previewMsg.content || '[图片]').substring(0, 20)
+        : '';
+    return '<div class="sidebar-item' + activeClass + '" data-key="' + key + '" data-type="' + type + '" data-target="' + target + '">' +
+        '<div class="avatar">' + escapeHtml(avatarChar) + '</div>' +
+        '<div class="item-info">' +
+            '<div class="item-name">' + escapeHtml(name) + '</div>' +
+            (previewHTML ? '<div class="item-preview">' + escapeHtml(previewHTML) + '</div>' : '') +
+        '</div>' +
+        badgeHTML +
+    '</div>';
+}
+
+function updateSidebarBadge(key) {
+    var el = document.querySelector('.sidebar-item[data-key="' + key + '"]');
+    if (!el) return;
+    var badgeEl = el.querySelector('.badge');
+    var count = unreadCounts.get(key) || 0;
+    if (count > 0) {
+        if (!badgeEl) {
+            badgeEl = document.createElement('span');
+            badgeEl.className = 'badge';
+            el.appendChild(badgeEl);
+        }
+        badgeEl.textContent = count;
+        badgeEl.style.display = 'inline-block';
+    } else if (badgeEl) {
+        badgeEl.style.display = 'none';
+    }
+}
+
+function updateSidebarPreview(key, msg) {
+    var el = document.querySelector('.sidebar-item[data-key="' + key + '"] .item-preview');
+    if (!el) return;
+    el.textContent = (msg.content || '[图片]').substring(0, 20);
+}
+
+function resortSidebarItem(key) {
+    var el = document.querySelector('.sidebar-item[data-key="' + key + '"]');
+    if (!el) return;
+    var list = document.getElementById('sidebarList');
+    var firstItem = list.querySelector('.sidebar-item');
+    // 广播始终置顶
+    if (key === 'broadcast') return;
+    // 将该项移到广播之后、其余项之前
+    if (firstItem && firstItem.dataset.key === 'broadcast') {
+        list.insertBefore(el, firstItem.nextSibling);
+    }
+}
+
+// ========================================
+// 标签管理
+// ========================================
+function openOrSwitchTab(key, type, targetId, name) {
+    if (chatTabs.has(key)) {
+        switchToTab(key);
+    } else {
+        createTab(key, type, targetId, name);
+        switchToTab(key);
+        loadHistory(key, 1);
+    }
+    // 清未读
+    unreadCounts.set(key, 0);
+    updateSidebarBadge(key);
+    updateTabBadge(key);
+    renderSidebar();
+}
+
+function createTab(key, type, targetId, name) {
+    // 标签头部
+    var tabEl = document.createElement('span');
+    tabEl.className = 'chat-tab';
+    tabEl.innerHTML = '<span class="tab-name">' + escapeHtml(name) + '</span>' +
+        '<span class="tab-badge" style="display:none"></span>' +
+        '<span class="tab-close">&times;</span>';
+    tabEl.querySelector('.tab-name').addEventListener('click', function(e) {
+        e.stopPropagation();
+        switchToTab(key);
+    });
+    tabEl.querySelector('.tab-close').addEventListener('click', function(e) {
+        e.stopPropagation();
+        closeTab(key);
+    });
+    document.getElementById('tabBar').appendChild(tabEl);
+
+    // 面板
+    var panelEl = document.createElement('div');
+    panelEl.className = 'tab-panel hidden';
+    panelEl.innerHTML =
+        '<div class="chat-header">' + escapeHtml(name) + '</div>' +
+        '<div class="chat-messages"></div>' +
+        '<div class="chat-input">' +
+            '<input type="text" placeholder="输入消息...">' +
+            '<button>发送</button>' +
+        '</div>';
+    var inputEl = panelEl.querySelector('input');
+    var btnEl = panelEl.querySelector('button');
+    inputEl.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') sendMessage(key);
+    });
+    btnEl.addEventListener('click', function() { sendMessage(key); });
+    document.getElementById('tabPanels').appendChild(panelEl);
+
+    var panelMessagesEl = panelEl.querySelector('.chat-messages');
+    // 上滚加载更多
+    panelMessagesEl.addEventListener('scroll', function() {
+        if (this.scrollTop < 40 && chatTabs.has(key)) {
+            var tab = chatTabs.get(key);
+            if (tab.hasMore && !tab._loading) {
+                tab._loading = true;
+                loadHistory(key, tab.historyPage);
+            }
+        }
+    });
+
+    chatTabs.set(key, {
+        type: type,
+        targetId: targetId,
+        name: name,
+        messages: [],
+        historyPage: 1,
+        hasMore: true,
+        _loading: false,
+        panelEl: panelEl,
+        messagesEl: panelMessagesEl,
+        inputEl: inputEl,
+        headerEl: panelEl.querySelector('.chat-header'),
+        tabEl: tabEl
+    });
+}
+
+function switchToTab(key) {
+    // 旧标签取消激活
+    if (activeTabKey && chatTabs.has(activeTabKey)) {
+        var old = chatTabs.get(activeTabKey);
+        old.panelEl.classList.add('hidden');
+        old.tabEl.classList.remove('active');
+    }
+    // 新标签激活
+    var tab = chatTabs.get(key);
+    tab.panelEl.classList.remove('hidden');
+    tab.tabEl.classList.add('active');
+    activeTabKey = key;
+    tab.inputEl.focus();
+
+    // 隐藏空状态占位
+    var placeholder = document.getElementById('noChatPlaceholder');
+    if (placeholder) placeholder.style.display = 'none';
+
+    // 更新侧边栏高亮
+    document.querySelectorAll('.sidebar-item').forEach(function(el) {
+        el.classList.toggle('active', el.dataset.key === key);
+    });
+}
+
+function closeTab(key) {
+    var tab = chatTabs.get(key);
+    if (!tab) return;
+    var wasActive = (key === activeTabKey);
+
+    // 查找相邻标签
+    var keys = Array.from(chatTabs.keys());
+    var idx = keys.indexOf(key);
+    var fallbackKey = keys[idx + 1] || keys[idx - 1] || null;
+
+    // 移除 DOM
+    tab.panelEl.remove();
+    tab.tabEl.remove();
+    chatTabs.delete(key);
+
+    if (wasActive) {
+        activeTabKey = null;
+        if (fallbackKey) {
+            switchToTab(fallbackKey);
+        } else {
+            // 无标签，显示占位
+            var placeholder = document.getElementById('noChatPlaceholder');
+            if (placeholder) placeholder.style.display = '';
+        }
+    }
+}
+
+function updateTabBadge(key) {
+    var tab = chatTabs.get(key);
+    if (!tab) return;
+    var badgeEl = tab.tabEl.querySelector('.tab-badge');
+    var count = unreadCounts.get(key) || 0;
+    if (count > 0) {
+        badgeEl.textContent = count;
+        badgeEl.style.display = 'inline';
+    } else {
+        badgeEl.style.display = 'none';
+    }
+}
+
+// ========================================
+// 消息接收路由
+// ========================================
 onMessage = function(msg) {
-    appendMessage(msg);
+    var myId = getUserId();
+    var key;
+
+    if (msg.group_id !== null && msg.group_id !== undefined && msg.group_id !== 0) {
+        key = 'group:' + msg.group_id;
+    } else if (msg.to_user_id !== null && msg.to_user_id !== undefined && msg.to_user_id !== 0) {
+        // 单聊：peerId 是对方
+        var peerId = (msg.from_user_id === myId) ? msg.to_user_id : msg.from_user_id;
+        key = 'user:' + peerId;
+    } else {
+        key = 'broadcast';
+    }
+
+    // 更新最后消息
+    lastMessages.set(key, msg);
+    updateSidebarPreview(key, msg);
+    resortSidebarItem(key);
+
+    if (chatTabs.has(key)) {
+        var tab = chatTabs.get(key);
+        tab.messages.push(msg);
+        if (key === activeTabKey) {
+            tab.messagesEl.innerHTML += renderOneMessage(msg);
+            tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
+        } else {
+            unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1);
+            updateTabBadge(key);
+        }
+    } else {
+        unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1);
+    }
+
+    updateSidebarBadge(key);
 };
 
-connectWS();
-
-function switchChat() {
-    const type = document.getElementById('chatType').value;
-    const target = parseInt(document.getElementById('targetInput').value) || 0;
-    if (!target && type !== 'broadcast') return;
-
-    currentChat = { type, target };
-
-    if (type === 'user') {
-        document.getElementById('chatHeader').textContent = '单聊 — 用户 ' + target;
-        loadHistory();
-    } else if (type === 'group') {
-        document.getElementById('chatHeader').textContent = '群聊 — 群组 ' + target;
-        loadGroupHistory();
-    } else {
-        document.getElementById('chatHeader').textContent = '广播消息';
-        loadBroadcastHistory();
-    }
+// ========================================
+// 消息渲染
+// ========================================
+function renderOneMessage(msg) {
+    var isMe = msg.from_user_id === getUserId();
+    var cls = isMe ? 'from-me' : '';
+    var name = msg.from_user
+        ? (msg.from_user.nickname || msg.from_user.username)
+        : ('用户' + msg.from_user_id);
+    return '<div class="msg ' + cls + '">' +
+        '<div class="bubble">' +
+            '<div class="meta">' + escapeHtml(name) + '</div>' +
+            escapeHtml(msg.content) +
+        '</div>' +
+    '</div>';
 }
 
-function appendMessage(msg) {
-    const isMe = msg.from_user_id === getUserId();
-    const cls = isMe ? 'from-me' : '';
-    const displayName = msg.from_user ? (msg.from_user.nickname || msg.from_user.username) : ('用户' + msg.from_user_id);
-    const div = document.getElementById('chatMessages');
-    // 根据聊天类型过滤显示
-    if (currentChat.type === 'user') {
-        if (msg.to_user_id && (msg.from_user_id === currentChat.target || msg.to_user_id === currentChat.target ||
-            msg.from_user_id === getUserId() && msg.to_user_id === currentChat.target)) {
-            // 相关消息，显示
-        } else { return; }
+function renderAllMessages(tab) {
+    var html = '';
+    for (var i = 0; i < tab.messages.length; i++) {
+        html += renderOneMessage(tab.messages[i]);
     }
-    div.innerHTML += `<div class="msg ${cls}">
-        <div class="bubble">
-            <div class="meta">${displayName}</div>
-            ${escapeHtml(msg.content)}
-        </div>
-    </div>`;
-    div.scrollTop = div.scrollHeight;
+    tab.messagesEl.innerHTML = html;
 }
 
-function sendMessage() {
-    const content = document.getElementById('msgInput').value.trim();
+// ========================================
+// 发送消息
+// ========================================
+function sendMessage(key) {
+    var tab = chatTabs.get(key || activeTabKey);
+    if (!tab) return;
+    var content = tab.inputEl.value.trim();
     if (!content) return;
 
-    const msg = {
+    var msg = {
         type: 'text',
         from_user_id: getUserId(),
         content: content
     };
-
-    if (currentChat.type === 'user') {
-        msg.to_user_id = currentChat.target;
-    } else if (currentChat.type === 'group') {
-        msg.group_id = currentChat.target;
+    if (tab.type === 'user') {
+        msg.to_user_id = tab.targetId;
+    } else if (tab.type === 'group') {
+        msg.group_id = tab.targetId;
     }
-    // 广播不设置 to 和 group
+    // broadcast: 不设 to/group
 
     sendWS(msg);
-    document.getElementById('msgInput').value = '';
+    tab.inputEl.value = '';
+};
+
+// ========================================
+// 历史消息加载
+// ========================================
+async function loadHistory(key, page) {
+    var tab = chatTabs.get(key);
+    if (!tab) return;
+    page = page || 1;
+
+    var url;
+    if (tab.type === 'user') {
+        url = '/history?peer_id=' + tab.targetId + '&page=' + page + '&page_size=30';
+    } else if (tab.type === 'group') {
+        url = '/history/group/' + tab.targetId + '?page=' + page + '&page_size=30';
+    } else {
+        url = '/history/broadcast?page=' + page + '&page_size=30';
+    }
+
+    try {
+        var data = await api('GET', url);
+        tab._loading = false;
+        if (!data.messages || data.messages.length === 0) {
+            tab.hasMore = false;
+            return;
+        }
+        var newMsgs = data.messages.reverse(); // 服务端返回最新在前，反转为时间正序
+
+        if (page === 1) {
+            tab.messages = newMsgs;
+            renderAllMessages(tab);
+            tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
+        } else {
+            var oldH = tab.messagesEl.scrollHeight;
+            tab.messages = newMsgs.concat(tab.messages);
+            renderAllMessages(tab);
+            tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight - oldH;
+        }
+        tab.historyPage = page + 1;
+        if (data.messages.length < 30) tab.hasMore = false;
+    } catch(e) {
+        tab._loading = false;
+        console.error(e);
+    }
 }
 
-async function loadHistory() {
-    try {
-        const data = await api('GET', '/history?peer_id=' + currentChat.target + '&page=1&page_size=50');
-        const div = document.getElementById('chatMessages');
-        div.innerHTML = '';
-        if (data.messages) {
-            data.messages.reverse().forEach(m => appendMessage(m));
-        }
-    } catch(e) { console.error(e); }
-}
+// ========================================
+// URL 参数处理（来自 contacts/groups 页跳转）
+// ========================================
+var pendingOpenKey = null;
+var pendingOpenType = null;
+var pendingOpenTarget = null;
 
-async function loadGroupHistory() {
-    try {
-        const data = await api('GET', '/history/group/' + currentChat.target + '?page=1&page_size=50');
-        const div = document.getElementById('chatMessages');
-        div.innerHTML = '';
-        if (data.messages) {
-            data.messages.reverse().forEach(m => appendMessage(m));
-        }
-    } catch(e) { console.error(e); }
-}
-
-async function loadBroadcastHistory() {
-    try {
-        const data = await api('GET', '/history/broadcast?page=1&page_size=50');
-        const div = document.getElementById('chatMessages');
-        div.innerHTML = '';
-        if (data.messages) {
-            data.messages.reverse().forEach(m => appendMessage(m));
-        }
-    } catch(e) { console.error(e); }
+var urlParams = new URLSearchParams(window.location.search);
+var peerParam = urlParams.get('peer');
+var typeParam = urlParams.get('type') || 'user';
+if (peerParam) {
+    var targetId = parseInt(peerParam);
+    pendingOpenType = typeParam === 'group' ? 'group' : 'user';
+    pendingOpenTarget = targetId;
+    pendingOpenKey = pendingOpenType + ':' + targetId;
 }
 
 function escapeHtml(s) {
-    const div = document.createElement('div');
-    div.textContent = s;
-    return div.innerHTML;
+    var d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
 }
+
+// ========================================
+// 初始化
+// ========================================
+connectWS();
+
+async function init() {
+    await Promise.all([loadFriends(), loadGroups()]);
+    renderSidebar();
+
+    if (pendingOpenKey) {
+        var name = '';
+        if (pendingOpenType === 'user') {
+            var friend = sidebarFriends.find(function(f) { return f.friend_id === pendingOpenTarget; });
+            name = friend ? (friend.remark || '用户' + pendingOpenTarget) : ('用户' + pendingOpenTarget);
+        } else {
+            var group = sidebarGroups.find(function(g) { return g.id === pendingOpenTarget; });
+            name = group ? group.name : ('群组' + pendingOpenTarget);
+        }
+        openOrSwitchTab(pendingOpenKey, pendingOpenType, pendingOpenTarget, name);
+    }
+}
+
+init();
 </script>
 </body>
 </html>

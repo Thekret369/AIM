@@ -68,3 +68,195 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .msg { font-size: 13px; margin-left: 10px; }
 .msg.success { color: #27ae60; }
 .msg.error { color: #e74c3c; }
+
+/* ========================================
+   聊天双栏布局（左侧边栏 + 右侧多标签面板）
+   ======================================== */
+
+.chat-layout {
+	display: flex;
+	height: calc(100vh - 52px);
+	overflow: hidden;
+}
+
+/* ---- 左侧边栏 ---- */
+.chat-sidebar {
+	width: 260px;
+	min-width: 260px;
+	background: #e9edf2;
+	display: flex;
+	flex-direction: column;
+	border-right: 1px solid #d6dbe1;
+}
+
+.sidebar-tabs {
+	display: flex;
+	border-bottom: 1px solid #d6dbe1;
+}
+.sidebar-tabs .tab-btn {
+	flex: 1;
+	padding: 10px 0;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	font-size: 14px;
+	color: #666;
+	border-bottom: 2px solid transparent;
+}
+.sidebar-tabs .tab-btn.active {
+	color: #2b5f8a;
+	border-bottom-color: #2b5f8a;
+	font-weight: 600;
+}
+
+.sidebar-list {
+	flex: 1;
+	overflow-y: auto;
+}
+.sidebar-item {
+	display: flex;
+	align-items: center;
+	padding: 10px 14px;
+	cursor: pointer;
+	border-bottom: 1px solid #e0e4e8;
+}
+.sidebar-item:hover { background: #dce1e8; }
+.sidebar-item.active { background: #cdd5df; }
+
+.sidebar-item .avatar {
+	width: 38px; height: 38px;
+	border-radius: 4px;
+	background: #2b5f8a; color: #fff;
+	display: flex; align-items: center; justify-content: center;
+	font-size: 15px; font-weight: 600;
+	margin-right: 10px;
+	flex-shrink: 0;
+}
+.sidebar-item .item-info {
+	flex: 1; min-width: 0;
+}
+.sidebar-item .item-name {
+	font-size: 14px; font-weight: 500;
+	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sidebar-item .item-preview {
+	font-size: 12px; color: #999;
+	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+	margin-top: 2px;
+}
+.sidebar-item .badge {
+	background: #e74c3c; color: #fff;
+	border-radius: 10px; padding: 2px 7px;
+	font-size: 11px; font-weight: 600;
+	min-width: 18px; text-align: center;
+	flex-shrink: 0;
+	margin-left: 6px;
+}
+
+/* ---- 右侧聊天主区域 ---- */
+.chat-main {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: #f5f6f7;
+}
+
+.tab-bar {
+	display: flex;
+	background: #dce1e8;
+	border-bottom: 1px solid #cdd5df;
+	overflow-x: auto;
+	min-height: 34px;
+	align-items: flex-end;
+}
+.tab-bar .chat-tab {
+	display: inline-flex;
+	align-items: center;
+	padding: 6px 12px;
+	background: #e9edf2;
+	border-right: 1px solid #d6dbe1;
+	cursor: pointer;
+	font-size: 13px;
+	gap: 6px;
+	user-select: none;
+	max-width: 160px;
+	border-bottom: 2px solid transparent;
+}
+.tab-bar .chat-tab:hover { background: #f0f2f5; }
+.tab-bar .chat-tab.active {
+	background: #f5f6f7;
+	border-bottom: 2px solid #2b5f8a;
+}
+.tab-bar .chat-tab .tab-name {
+	overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tab-bar .chat-tab .tab-close {
+	font-size: 14px; color: #999; line-height: 1; cursor: pointer;
+	flex-shrink: 0;
+}
+.tab-bar .chat-tab .tab-close:hover { color: #e74c3c; }
+.tab-bar .chat-tab .tab-badge {
+	background: #e74c3c; color: #fff;
+	border-radius: 8px; padding: 0 5px;
+	font-size: 10px; line-height: 16px;
+	flex-shrink: 0;
+}
+
+.tab-panels {
+	flex: 1;
+	position: relative;
+	overflow: hidden;
+}
+.tab-panel {
+	position: absolute;
+	top: 0; left: 0; right: 0; bottom: 0;
+	display: flex;
+	flex-direction: column;
+	background: #f5f6f7;
+}
+.tab-panel.hidden { display: none; }
+
+.tab-panel .chat-header {
+	padding: 10px 16px;
+	border-bottom: 1px solid #e0e4e8;
+	font-weight: 500;
+	background: #fff;
+}
+.tab-panel .chat-messages {
+	flex: 1;
+	overflow-y: auto;
+	padding: 14px;
+}
+.tab-panel .chat-input {
+	padding: 10px 14px;
+	border-top: 1px solid #e0e4e8;
+	display: flex;
+	gap: 8px;
+	background: #fff;
+}
+.tab-panel .chat-input input {
+	flex: 1;
+	padding: 8px 12px;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	font-size: 14px;
+}
+.tab-panel .chat-input button {
+	padding: 8px 18px;
+	background: #2b5f8a;
+	color: #fff;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+/* 空状态占位 */
+.no-chat-placeholder {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	color: #bbb;
+	font-size: 15px;
+}
