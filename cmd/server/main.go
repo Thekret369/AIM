@@ -58,7 +58,7 @@ func main() {
 	friendH := &handler.FriendHandler{Svc: friendSvc}
 	groupH := &handler.GroupHandler{Svc: groupSvc}
 	contactH := &handler.ContactGroupHandler{Svc: contactSvc}
-	chatH := &handler.ChatHandler{Svc: chatSvc, Hub: hub}
+	chatH := &handler.ChatHandler{Svc: chatSvc, Hub: hub, JWTSecret: cfg.JWT.Secret}
 
 	// 配置 Gin 路由
 	gin.SetMode(gin.ReleaseMode)
@@ -76,14 +76,18 @@ func main() {
 		c.HTML(200, "login.html", nil)
 	})
 
-	// 公开 API
+	// 公开 API（免鉴权）
 	api := r.Group("/api")
 	{
 		api.POST("/register", authH.Register)
 		api.POST("/login", authH.Login)
+		api.POST("/logout", authH.Logout)
 	}
 
-	// 需要认证的 API
+	// WebSocket — 独立于 /api 之外，浏览器 WS 不支持 Header 认证，由 Handler 从 ?token= 自验 JWT
+	r.GET("/ws", chatH.HandleWS)
+
+	// 认证 API（需 JWT）
 	auth := r.Group("/api")
 	auth.Use(middleware.AuthRequired(cfg.JWT.Secret))
 	{
@@ -115,9 +119,6 @@ func main() {
 		auth.GET("/history", chatH.GetHistory)
 		auth.GET("/history/group/:id", chatH.GetGroupHistory)
 		auth.GET("/history/broadcast", chatH.GetBroadcastHistory)
-
-		// WebSocket
-		auth.GET("/ws", chatH.HandleWS)
 	}
 
 	// 需要认证的页面路由

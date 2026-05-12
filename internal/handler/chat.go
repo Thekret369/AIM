@@ -4,16 +4,19 @@ import (
 	"net/http"
 	"strconv"
 
+	"AIM/internal/middleware"
 	"AIM/internal/service"
 	"AIM/internal/ws"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
 
 type ChatHandler struct {
-	Svc *service.ChatService
-	Hub *ws.Hub
+	Svc        *service.ChatService
+	Hub        *ws.Hub
+	JWTSecret  string
 }
 
 var upgrader = websocket.Upgrader{
@@ -23,17 +26,31 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// HandleWS 升级 WebSocket 连接，认证通过后注册到 Hub
+// HandleWS 升级 WebSocket 连接
+// 浏览器 WebSocket API 不支持自定义 Header，所以 token 通过查询参数 ?token=xxx 传递
 func (h *ChatHandler) HandleWS(c *gin.Context) {
-	userID := c.GetUint("user_id")
-	username := c.GetString("username")
+	// 优先从查询参数取 token（浏览器 WebSocket），回退到 Header（原生客户端）
+	tokenStr := c.Query("token")
+	if tokenStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少 token"})
+		return
+	}
+
+	claims := &middleware.Claims{}
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		return []byte(h.JWTSecret), nil
+	})
+	if err != nil || !token.Valid {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效或已过期"})
+		return
+	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return
 	}
 
-	client := ws.NewClient(userID, username, h.Hub, conn)
+	client := ws.NewClient(claims.UserID, claims.Username, h.Hub, conn)
 	client.Start()
 }
 

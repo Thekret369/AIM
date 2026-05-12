@@ -21,14 +21,22 @@ type Claims struct {
 // 验证通过后将 user_id 和 username 写入 gin.Context
 func AuthRequired(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		tokenStr := ""
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+			tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+		// 浏览器页面导航不带 Header，从 Cookie 回退取 token
+		if tokenStr == "" {
+			if cookie, err := c.Cookie("aim_token"); err == nil {
+				tokenStr = cookie
+			}
+		}
+		if tokenStr == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少认证令牌"})
 			c.Abort()
 			return
 		}
-
-		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 		claims := &Claims{}
 		token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
 			return []byte(secret), nil

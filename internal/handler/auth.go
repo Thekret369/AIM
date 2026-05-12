@@ -57,5 +57,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// 种 Cookie，解决浏览器页面导航不携带 Authorization header 的问题
+	c.SetCookie("aim_token", token, 3600*24*7, "/", "", false, true)
+
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": user})
+}
+
+// Logout 退出登录，清除 Cookie
+func (h *AuthHandler) Logout(c *gin.Context) {
+	c.SetCookie("aim_token", "", -1, "/", "", false, true)
+	c.JSON(http.StatusOK, gin.H{"message": "已退出"})
 }
