@@ -1,0 +1,17 @@
+# IDE
+.idea/
+
+# 日志（不提交到 git）
+日志/
+
+# 数据库文件
+*.db
+
+# 编译产物
+aim
+aim.exe
+*.out
+
+# 环境文件
+.env
+.env.local

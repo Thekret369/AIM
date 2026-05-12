@@ -1,0 +1,16 @@
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+database:
+  driver: "sqlite"   # sqlite | mysql | postgres
+  dsn: "aim.db"      # SQLite 文件路径或 MySQL/Postgres DSN
+
+jwt:
+  secret: "aim-secret-key-change-in-production"
+  expire_hours: 72
+
+log:
+  level: "debug"     # debug | info | warn | error
+  file: "logs/aim.log"
