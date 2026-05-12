@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIM — 聊天</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="nav">
+    <span>AIM</span>
+    <div>
+        <span id="navUser"></span>
+        <a href="/contacts">联系人</a>
+        <a href="/chat">聊天</a>
+        <a href="/groups">群组</a>
+        <a href="javascript:logout()">退出</a>
+    </div>
+</div>
+<div class="container">
+    <!-- 会话选择 -->
+    <div style="margin-bottom:12px">
+        <select id="chatType" onchange="switchChat()" style="padding:6px">
+            <option value="user">单聊</option>
+            <option value="group">群聊</option>
+            <option value="broadcast">广播</option>
+        </select>
+        <input type="text" id="targetInput" placeholder="输入对方用户 ID 或群组 ID" style="padding:6px;width:200px">
+        <button class="btn btn-primary" onclick="switchChat()">切换聊天</button>
+        <button class="btn btn-primary" onclick="sendMessage()" style="margin-left:8px">发送(Enter)</button>
+    </div>
+
+    <div class="chat-box">
+        <div class="chat-header" id="chatHeader">请选择聊天对象</div>
+        <div class="chat-messages" id="chatMessages">
+            <div style="text-align:center;color:#aaa;margin-top:80px">— 消息将显示在这里 —</div>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="msgInput" placeholder="输入消息..." onkeydown="if(event.key==='Enter')sendMessage()">
+        </div>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+document.getElementById('navUser').textContent = getUserNickname();
+
+let currentChat = { type: 'user', target: 0 };
+
+// 从 URL 参数读取默认聊天对象
+const params = new URLSearchParams(window.location.search);
+const peerParam = params.get('peer');
+if (peerParam) {
+    document.getElementById('targetInput').value = peerParam;
+    switchChat();
+}
+
+// WebSocket 消息回调
+onMessage = function(msg) {
+    appendMessage(msg);
+};
+
+connectWS();
+
+function switchChat() {
+    const type = document.getElementById('chatType').value;
+    const target = parseInt(document.getElementById('targetInput').value) || 0;
+    if (!target && type !== 'broadcast') return;
+
+    currentChat = { type, target };
+
+    if (type === 'user') {
+        document.getElementById('chatHeader').textContent = '单聊 — 用户 ' + target;
+        loadHistory();
+    } else if (type === 'group') {
+        document.getElementById('chatHeader').textContent = '群聊 — 群组 ' + target;
+        loadGroupHistory();
+    } else {
+        document.getElementById('chatHeader').textContent = '广播消息';
+        loadBroadcastHistory();
+    }
+}
+
+function appendMessage(msg) {
+    const isMe = msg.from_user_id === getUserId();
+    const cls = isMe ? 'from-me' : '';
+    const displayName = msg.from_user ? (msg.from_user.nickname || msg.from_user.username) : ('用户' + msg.from_user_id);
+    const div = document.getElementById('chatMessages');
+    // 根据聊天类型过滤显示
+    if (currentChat.type === 'user') {
+        if (msg.to_user_id && (msg.from_user_id === currentChat.target || msg.to_user_id === currentChat.target ||
+            msg.from_user_id === getUserId() && msg.to_user_id === currentChat.target)) {
+            // 相关消息，显示
+        } else { return; }
+    }
+    div.innerHTML += `<div class="msg ${cls}">
+        <div class="bubble">
+            <div class="meta">${displayName}</div>
+            ${escapeHtml(msg.content)}
+        </div>
+    </div>`;
+    div.scrollTop = div.scrollHeight;
+}
+
+function sendMessage() {
+    const content = document.getElementById('msgInput').value.trim();
+    if (!content) return;
+
+    const msg = {
+        type: 'text',
+        from_user_id: getUserId(),
+        content: content
+    };
+
+    if (currentChat.type === 'user') {
+        msg.to_user_id = currentChat.target;
+    } else if (currentChat.type === 'group') {
+        msg.group_id = currentChat.target;
+    }
+    // 广播不设置 to 和 group
+
+    sendWS(msg);
+    document.getElementById('msgInput').value = '';
+}
+
+async function loadHistory() {
+    try {
+        const data = await api('GET', '/history?peer_id=' + currentChat.target + '&page=1&page_size=50');
+        const div = document.getElementById('chatMessages');
+        div.innerHTML = '';
+        if (data.messages) {
+            data.messages.reverse().forEach(m => appendMessage(m));
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function loadGroupHistory() {
+    try {
+        const data = await api('GET', '/history/group/' + currentChat.target + '?page=1&page_size=50');
+        const div = document.getElementById('chatMessages');
+        div.innerHTML = '';
+        if (data.messages) {
+            data.messages.reverse().forEach(m => appendMessage(m));
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function loadBroadcastHistory() {
+    try {
+        const data = await api('GET', '/history/broadcast?page=1&page_size=50');
+        const div = document.getElementById('chatMessages');
+        div.innerHTML = '';
+        if (data.messages) {
+            data.messages.reverse().forEach(m => appendMessage(m));
+        }
+    } catch(e) { console.error(e); }
+}
+
+function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+</script>
+</body>
+</html>

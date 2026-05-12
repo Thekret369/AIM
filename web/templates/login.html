@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIM — 登录</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="login-box">
+    <h1>AIM</h1>
+    <div id="loginForm">
+        <input type="text" id="loginUser" placeholder="用户名" autocomplete="username">
+        <input type="password" id="loginPass" placeholder="密码">
+        <button onclick="doLogin()">登 录</button>
+        <div class="toggle" onclick="showRegister()">没有账号？立即注册</div>
+        <div class="error" id="loginError"></div>
+    </div>
+    <div id="registerForm" style="display:none">
+        <input type="text" id="regUser" placeholder="用户名">
+        <input type="password" id="regPass" placeholder="密码">
+        <input type="text" id="regNick" placeholder="昵称（选填）">
+        <button onclick="doRegister()">注 册</button>
+        <div class="toggle" onclick="showLogin()">已有账号？去登录</div>
+        <div class="error" id="regError"></div>
+    </div>
+</div>
+<script src="/static/app.js"></script>
+<script>
+function showRegister() {
+    document.getElementById('loginForm').style.display = 'none';
+    document.getElementById('registerForm').style.display = 'block';
+}
+function showLogin() {
+    document.getElementById('registerForm').style.display = 'none';
+    document.getElementById('loginForm').style.display = 'block';
+}
+
+async function doLogin() {
+    const u = document.getElementById('loginUser').value.trim();
+    const p = document.getElementById('loginPass').value;
+    if (!u || !p) { document.getElementById('loginError').textContent = '请填写完整'; return; }
+    try {
+        const data = await api('POST', '/login', { username: u, password: p });
+        setToken(data.token);
+        setUserId(data.user.id);
+        setUsername(data.user.username);
+        setUserNickname(data.user.nickname || data.user.username);
+        window.location.href = '/contacts';
+    } catch(e) {
+        document.getElementById('loginError').textContent = e.message;
+    }
+}
+
+async function doRegister() {
+    const u = document.getElementById('regUser').value.trim();
+    const p = document.getElementById('regPass').value;
+    const n = document.getElementById('regNick').value.trim();
+    if (!u || !p) { document.getElementById('regError').textContent = '请填写用户名和密码'; return; }
+    try {
+        await api('POST', '/register', { username: u, password: p, nickname: n || u });
+        document.getElementById('regError').textContent = '';
+        alert('注册成功，请登录');
+        showLogin();
+    } catch(e) {
+        document.getElementById('regError').textContent = e.message;
+    }
+}
+</script>
+</body>
+</html>
