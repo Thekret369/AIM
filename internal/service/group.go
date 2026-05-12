@@ -8,6 +8,17 @@ import (
 	"AIM/internal/model"
 )
 
+// MemberInfo 群成员信息（含用户资料）
+type MemberInfo struct {
+	ID         uint        `json:"id"`
+	GroupID    uint        `json:"group_id"`
+	UserID     uint        `json:"user_id"`
+	Username   string      `json:"username"`
+	Nickname   string      `json:"nickname"`
+	Role       string      `json:"role"`
+	MutedUntil *time.Time  `json:"muted_until,omitempty"`
+}
+
 type GroupService struct{}
 
 // CreateGroup 创建群组，创建者默认为群主
@@ -157,14 +168,42 @@ func (s *GroupService) MuteMember(groupID, operatorID, targetID uint, durationMi
 	return model.DB.Model(&targetMember).Update("muted_until", until).Error
 }
 
-// GetGroupMembers 获取群成员列表
-func (s *GroupService) GetGroupMembers(groupID uint) ([]model.GroupMember, error) {
+// GetGroupMembers 获取群成员列表（含用户名/昵称）
+func (s *GroupService) GetGroupMembers(groupID uint) ([]MemberInfo, error) {
 	var members []model.GroupMember
-	if err := model.DB.Where("group_id = ?", groupID).
-		Find(&members).Error; err != nil {
+	if err := model.DB.Where("group_id = ?", groupID).Find(&members).Error; err != nil {
 		return nil, err
 	}
-	return members, nil
+	if len(members) == 0 {
+		return []MemberInfo{}, nil
+	}
+
+	// 批量获取用户信息
+	userIDs := make([]uint, len(members))
+	for i, m := range members {
+		userIDs[i] = m.UserID
+	}
+	var users []model.User
+	model.DB.Where("id IN ?", userIDs).Find(&users)
+	userMap := make(map[uint]model.User)
+	for _, u := range users {
+		userMap[u.ID] = u
+	}
+
+	result := make([]MemberInfo, len(members))
+	for i, m := range members {
+		u := userMap[m.UserID]
+		result[i] = MemberInfo{
+			ID:         m.ID,
+			GroupID:    m.GroupID,
+			UserID:     m.UserID,
+			Username:   u.Username,
+			Nickname:   u.Nickname,
+			Role:       string(m.Role),
+			MutedUntil: m.MutedUntil,
+		}
+	}
+	return result, nil
 }
 
 // GetUserGroups 获取用户所在的群组列表
@@ -189,4 +228,118 @@ func (s *GroupService) getMember(groupID, userID uint) (*model.GroupMember, erro
 		return nil, errors.New("不是群成员")
 	}
 	return &member, nil
+}
+
+// GetGroupDetail 获取群组详情及当前用户在该群的成员信息
+func (s *GroupService) GetGroupDetail(groupID, userID uint) (*model.Group, *model.GroupMember, error) {
+	var group model.Group
+	if err := model.DB.First(&group, groupID).Error; err != nil {
+		return nil, nil, errors.New("群组不存在")
+	}
+	member, err := s.getMember(groupID, userID)
+	if err != nil {
+		return &group, nil, nil // 非成员也可看基本信息，但无操作权限
+	}
+	return &group, member, nil
+}
+
+// UpdateGroup 更新群资料，仅群主可操作
+func (s *GroupService) UpdateGroup(groupID, operatorID uint, name, avatar, announce string) error {
+	var group model.Group
+	if err := model.DB.First(&group, groupID).Error; err != nil {
+		return errors.New("群组不存在")
+	}
+	if group.OwnerID != operatorID {
+		return errors.New("仅群主可编辑群资料")
+	}
+	updates := map[string]interface{}{}
+	if name != "" {
+		updates["name"] = name
+	}
+	if avatar != "" {
+		updates["avatar"] = avatar
+	}
+	// announce 允许置空（清空公告）
+	updates["announce"] = announce
+	if len(updates) > 0 {
+		return model.DB.Model(&group).Updates(updates).Error
+	}
+	return nil
+}
+
+// SetAdmin 切换管理员身份，仅群主可操作
+// 若 target 已是管理员则降为普通成员，否则提升为管理员
+func (s *GroupService) SetAdmin(groupID, operatorID, targetID uint) error {
+	var group model.Group
+	if err := model.DB.First(&group, groupID).Error; err != nil {
+		return errors.New("群组不存在")
+	}
+	if group.OwnerID != operatorID {
+		return errors.New("仅群主可设置管理员")
+	}
+	if operatorID == targetID {
+		return errors.New("群主已是最高权限")
+	}
+	targetMember, err := s.getMember(groupID, targetID)
+	if err != nil {
+		return err
+	}
+	if targetMember.Role == model.RoleOwner {
+		return errors.New("不能修改群主的角色")
+	}
+	if targetMember.Role == model.RoleAdmin {
+		targetMember.Role = model.RoleMember
+	} else {
+		targetMember.Role = model.RoleAdmin
+	}
+	return model.DB.Save(&targetMember).Error
+}
+
+// AddMember 添加成员到群组，群主/管理员可操作
+func (s *GroupService) AddMember(groupID, operatorID, targetID uint) error {
+	opMember, err := s.getMember(groupID, operatorID)
+	if err != nil {
+		return err
+	}
+	if opMember.Role != model.RoleOwner && opMember.Role != model.RoleAdmin {
+		return errors.New("无权限执行此操作")
+	}
+
+	// 检查目标用户是否存在
+	var user model.User
+	if err := model.DB.First(&user, targetID).Error; err != nil {
+		return errors.New("用户不存在")
+	}
+
+	// 检查是否已是成员
+	var count int64
+	model.DB.Model(&model.GroupMember{}).
+		Where("group_id = ? AND user_id = ?", groupID, targetID).
+		Count(&count)
+	if count > 0 {
+		return errors.New("该用户已是群成员")
+	}
+
+	member := &model.GroupMember{
+		GroupID: groupID,
+		UserID:  targetID,
+		Role:    model.RoleMember,
+	}
+	return model.DB.Create(member).Error
+}
+
+// UnmuteMember 解除禁言，群主/管理员可操作
+func (s *GroupService) UnmuteMember(groupID, operatorID, targetID uint) error {
+	opMember, err := s.getMember(groupID, operatorID)
+	if err != nil {
+		return err
+	}
+	if opMember.Role != model.RoleOwner && opMember.Role != model.RoleAdmin {
+		return errors.New("无权限执行此操作")
+	}
+	targetMember, err := s.getMember(groupID, targetID)
+	if err != nil {
+		return err
+	}
+	return model.DB.Model(&targetMember).Update("muted_until", nil).Error
 }

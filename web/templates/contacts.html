@@ -71,7 +71,7 @@ async function loadFriends() {
             return;
         }
         list.innerHTML = data.friends.map(f => {
-            const remark = f.remark || 'ID:' + f.friend_id;
+            const remark = f.remark || f.nickname || f.username || ('用户' + f.friend_id);
             return `<div class="contact-item" onclick="window.location.href='/chat?peer=${f.friend_id}'">
                 <div class="avatar">${remark[0]}</div>
                 <div class="info"><div class="name">${remark}</div><div class="remark">${f.note || ''}</div></div>
@@ -90,14 +90,15 @@ async function loadPending() {
             list.innerHTML = '<div style="padding:12px;color:#888">暂无待处理申请</div>';
             return;
         }
-        list.innerHTML = data.requests.map(r => `
-            <div class="contact-item">
-                <div class="avatar">?</div>
-                <div class="info"><div class="name">用户 ID: ${r.user_id}</div></div>
+        list.innerHTML = data.requests.map(r => {
+            const reqName = r.nickname || r.username || ('用户' + r.user_id);
+            return `<div class="contact-item">
+                <div class="avatar">${escapeHtml(reqName[0])}</div>
+                <div class="info"><div class="name">${escapeHtml(reqName)}</div></div>
                 <button class="btn btn-primary btn-sm" onclick="handleReq(${r.id}, true)">同意</button>
                 <button class="btn btn-danger btn-sm" onclick="handleReq(${r.id}, false)">拒绝</button>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
     } catch(e) { document.getElementById('pendingList').innerHTML = '加载失败: ' + e.message; }
 }
 
@@ -163,6 +164,12 @@ async function deleteGroup(id) {
         await api('DELETE', '/contact-groups/' + id);
         showGroupMgr();
     } catch(e) { alert(e.message); }
+}
+
+function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s || '';
+    return div.innerHTML;
 }
 
 loadFriends();
