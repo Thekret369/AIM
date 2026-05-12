@@ -36,7 +36,8 @@ function setUserNickname(n) {
     localStorage.setItem('aim_nickname', n);
 }
 
-function logout() {
+async function logout() {
+    try { await api('POST', '/logout', {}); } catch(e) {}
     localStorage.removeItem('aim_token');
     localStorage.removeItem('aim_username');
     localStorage.removeItem('aim_user_id');
@@ -74,7 +75,7 @@ function connectWS() {
     if (!token) return;
 
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = proto + '//' + window.location.host + '/api/ws?token=' + token;
+    const url = proto + '//' + window.location.host + '/ws?token=' + token;
 
     ws = new WebSocket(url);
 
