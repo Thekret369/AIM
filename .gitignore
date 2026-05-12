@@ -10,6 +10,7 @@
 # 编译产物
 aim
 aim.exe
+server.exe
 *.out
 
 # 测试目录

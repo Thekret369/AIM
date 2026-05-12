@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIM — 联系人</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="nav">
+    <span>AIM</span>
+    <div>
+        <span id="navUser"></span>
+        <a href="/contacts">联系人</a>
+        <a href="/chat">聊天</a>
+        <a href="/groups">群组</a>
+        <a href="javascript:logout()">退出</a>
+    </div>
+</div>
+<div class="container">
+    <div class="section">
+        <h2>好友列表</h2>
+        <div id="friendList" class="contact-list">加载中...</div>
+    </div>
+    <div class="section">
+        <h2>待处理申请</h2>
+        <div id="pendingList" class="contact-list">加载中...</div>
+    </div>
+    <div class="section">
+        <button class="btn btn-primary" onclick="showAddFriend()">添加好友</button>
+        <button class="btn" onclick="showGroupMgr()">分组管理</button>
+    </div>
+</div>
+
+<!-- 添加好友弹窗 -->
+<div id="addFriendModal" class="modal">
+    <div class="modal-content">
+        <h3>添加好友</h3>
+        <input type="number" id="addFriendId" placeholder="好友用户 ID">
+        <input type="text" id="addFriendMsg" placeholder="附言（选填）">
+        <button class="btn btn-primary" onclick="addFriend()">发送申请</button>
+        <button class="btn" onclick="closeModal('addFriendModal')">取消</button>
+        <div class="error" id="addFriendError"></div>
+    </div>
+</div>
+
+<!-- 分组管理弹窗 -->
+<div id="groupModal" class="modal">
+    <div class="modal-content">
+        <h3>分组管理</h3>
+        <div id="groupList"></div>
+        <input type="text" id="newGroupName" placeholder="新分组名">
+        <button class="btn btn-primary" onclick="createGroup()">创建</button>
+        <button class="btn" onclick="closeModal('groupModal')">关闭</button>
+        <div class="error" id="groupError"></div>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+document.getElementById('navUser').textContent = getUserNickname();
+
+// 加载好友列表
+async function loadFriends() {
+    try {
+        const data = await api('GET', '/friends');
+        const list = document.getElementById('friendList');
+        if (!data.friends || data.friends.length === 0) {
+            list.innerHTML = '<div style="padding:12px;color:#888">暂无好友</div>';
+            return;
+        }
+        list.innerHTML = data.friends.map(f => {
+            const remark = f.remark || 'ID:' + f.friend_id;
+            return `<div class="contact-item" onclick="window.location.href='/chat?peer=${f.friend_id}'">
+                <div class="avatar">${remark[0]}</div>
+                <div class="info"><div class="name">${remark}</div><div class="remark">${f.note || ''}</div></div>
+                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteFriend(${f.friend_id})">删除</button>
+            </div>`;
+        }).join('');
+    } catch(e) { document.getElementById('friendList').innerHTML = '加载失败: ' + e.message; }
+}
+
+// 加载待处理申请
+async function loadPending() {
+    try {
+        const data = await api('GET', '/friends/pending');
+        const list = document.getElementById('pendingList');
+        if (!data.requests || data.requests.length === 0) {
+            list.innerHTML = '<div style="padding:12px;color:#888">暂无待处理申请</div>';
+            return;
+        }
+        list.innerHTML = data.requests.map(r => `
+            <div class="contact-item">
+                <div class="avatar">?</div>
+                <div class="info"><div class="name">用户 ID: ${r.user_id}</div></div>
+                <button class="btn btn-primary btn-sm" onclick="handleReq(${r.id}, true)">同意</button>
+                <button class="btn btn-danger btn-sm" onclick="handleReq(${r.id}, false)">拒绝</button>
+            </div>
+        `).join('');
+    } catch(e) { document.getElementById('pendingList').innerHTML = '加载失败: ' + e.message; }
+}
+
+function showAddFriend() { document.getElementById('addFriendModal').classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+async function addFriend() {
+    const id = parseInt(document.getElementById('addFriendId').value);
+    const msg = document.getElementById('addFriendMsg').value;
+    if (!id) { document.getElementById('addFriendError').textContent = '请输入用户 ID'; return; }
+    try {
+        await api('POST', '/friends', { friend_id: id, message: msg });
+        closeModal('addFriendModal');
+        loadPending();
+        alert('申请已发送');
+    } catch(e) { document.getElementById('addFriendError').textContent = e.message; }
+}
+
+async function handleReq(id, accept) {
+    try {
+        await api('PUT', '/friends/' + id, { accept: accept });
+        loadFriends();
+        loadPending();
+    } catch(e) { alert(e.message); }
+}
+
+async function deleteFriend(id) {
+    if (!confirm('确认删除该好友？')) return;
+    try {
+        await api('DELETE', '/friends/' + id);
+        loadFriends();
+    } catch(e) { alert(e.message); }
+}
+
+async function showGroupMgr() {
+    document.getElementById('groupModal').classList.add('show');
+    const data = await api('GET', '/contact-groups');
+    const list = document.getElementById('groupList');
+    if (!data.groups || data.groups.length === 0) {
+        list.innerHTML = '<div style="color:#888">暂无分组</div>';
+    } else {
+        list.innerHTML = data.groups.map(g => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
+                <span>${g.name}</span>
+                <button class="btn btn-danger btn-sm" onclick="deleteGroup(${g.id})">删除</button>
+            </div>
+        `).join('');
+    }
+}
+
+async function createGroup() {
+    const name = document.getElementById('newGroupName').value.trim();
+    if (!name) return;
+    try {
+        await api('POST', '/contact-groups', { name: name });
+        document.getElementById('newGroupName').value = '';
+        showGroupMgr();
+    } catch(e) { document.getElementById('groupError').textContent = e.message; }
+}
+
+async function deleteGroup(id) {
+    try {
+        await api('DELETE', '/contact-groups/' + id);
+        showGroupMgr();
+    } catch(e) { alert(e.message); }
+}
+
+loadFriends();
+loadPending();
+</script>
+</body>
+</html>
