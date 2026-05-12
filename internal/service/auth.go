@@ -73,3 +73,54 @@ func (s *AuthService) generateToken(user *model.User) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.JWTSecret))
 }
+
+// GetProfile 获取用户个人信息
+func (s *AuthService) GetProfile(userID uint) (*model.User, error) {
+	var user model.User
+	if err := model.DB.First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("用户不存在")
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+// UpdateProfile 更新昵称和头像
+func (s *AuthService) UpdateProfile(userID uint, nickname, avatar string) (*model.User, error) {
+	var user model.User
+	if err := model.DB.First(&user, userID).Error; err != nil {
+		return nil, err
+	}
+	updates := map[string]interface{}{}
+	if nickname != "" {
+		updates["nickname"] = nickname
+	}
+	if avatar != "" {
+		updates["avatar"] = avatar
+	}
+	if len(updates) > 0 {
+		if err := model.DB.Model(&user).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
+	// 重新查询以获取最新数据
+	model.DB.First(&user, userID)
+	return &user, nil
+}
+
+// ChangePassword 修改密码，需验证旧密码
+func (s *AuthService) ChangePassword(userID uint, oldPassword, newPassword string) error {
+	var user model.User
+	if err := model.DB.First(&user, userID).Error; err != nil {
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); err != nil {
+		return errors.New("旧密码错误")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return model.DB.Model(&user).Update("password", string(hash)).Error
+}

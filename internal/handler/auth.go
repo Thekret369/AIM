@@ -68,3 +68,51 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.SetCookie("aim_token", "", -1, "/", "", false, true)
 	c.JSON(http.StatusOK, gin.H{"message": "已退出"})
 }
+
+// GetProfile 获取当前用户个人信息
+func (h *AuthHandler) GetProfile(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	user, err := h.Svc.GetProfile(userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"user": user})
+}
+
+// UpdateProfile 更新个人信息（昵称、头像）
+func (h *AuthHandler) UpdateProfile(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var req struct {
+		Nickname string `json:"nickname"`
+		Avatar   string `json:"avatar"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	user, err := h.Svc.UpdateProfile(userID, req.Nickname, req.Avatar)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"user": user})
+}
+
+// ChangePassword 修改密码
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var req struct {
+		OldPassword string `json:"old_password" binding:"required"`
+		NewPassword string `json:"new_password" binding:"required,min=6"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: 新密码至少6位"})
+		return
+	}
+	if err := h.Svc.ChangePassword(userID, req.OldPassword, req.NewPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "密码已修改"})
+}

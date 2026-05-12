@@ -115,6 +115,11 @@ func main() {
 		auth.GET("/groups/:id/members", groupH.GetGroupMembers)
 		auth.GET("/groups", groupH.GetUserGroups)
 
+		// 个人信息
+		auth.GET("/profile", authH.GetProfile)
+		auth.PUT("/profile", authH.UpdateProfile)
+		auth.PUT("/profile/password", authH.ChangePassword)
+
 		// 消息历史
 		auth.GET("/history", chatH.GetHistory)
 		auth.GET("/history/group/:id", chatH.GetGroupHistory)
@@ -130,6 +135,9 @@ func main() {
 	})
 	r.GET("/groups", middleware.AuthRequired(cfg.JWT.Secret), func(c *gin.Context) {
 		c.HTML(200, "groups.html", nil)
+	})
+	r.GET("/profile", middleware.AuthRequired(cfg.JWT.Secret), func(c *gin.Context) {
+		c.HTML(200, "profile.html", nil)
 	})
 
 	// 优雅关闭
