@@ -154,6 +154,120 @@ func (h *GroupHandler) GetGroupMembers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"members": members})
 }
 
+// GetGroupDetail 获取群组详情 + 当前用户的成员角色
+func (h *GroupHandler) GetGroupDetail(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组 ID"})
+		return
+	}
+	group, member, err := h.Svc.GetGroupDetail(uint(groupID), userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	myRole := ""
+	isMuted := false
+	if member != nil {
+		myRole = string(member.Role)
+		isMuted = member.IsMuted()
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"group":    group,
+		"my_role":  myRole,
+		"is_muted": isMuted,
+	})
+}
+
+// UpdateGroup 更新群资料（名称、头像、公告）
+func (h *GroupHandler) UpdateGroup(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组 ID"})
+		return
+	}
+	var req struct {
+		Name     string `json:"name"`
+		Avatar   string `json:"avatar"`
+		Announce string `json:"announce"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	if err := h.Svc.UpdateGroup(uint(groupID), userID, req.Name, req.Avatar, req.Announce); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"msg": "已更新"})
+}
+
+// SetAdmin 切换管理员身份（设管理 / 取消管理）
+func (h *GroupHandler) SetAdmin(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组 ID"})
+		return
+	}
+	targetID, err := strconv.ParseUint(c.Param("user_id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户 ID"})
+		return
+	}
+	if err := h.Svc.SetAdmin(uint(groupID), userID, uint(targetID)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"msg": "操作成功"})
+}
+
+// UnmuteMember 解除禁言
+func (h *GroupHandler) UnmuteMember(c *gin.Context) {
+	operatorID := c.GetUint("user_id")
+	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组 ID"})
+		return
+	}
+	var req struct {
+		UserID uint `json:"user_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	if err := h.Svc.UnmuteMember(uint(groupID), operatorID, req.UserID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"msg": "已解除禁言"})
+}
+
+// AddMember 添加成员到群组（群主/管理员操作）
+func (h *GroupHandler) AddMember(c *gin.Context) {
+	operatorID := c.GetUint("user_id")
+	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组 ID"})
+		return
+	}
+	var req struct {
+		UserID uint `json:"user_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	if err := h.Svc.AddMember(uint(groupID), operatorID, req.UserID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"msg": "已添加"})
+}
+
 // GetUserGroups 获取用户所在的群组列表
 func (h *GroupHandler) GetUserGroups(c *gin.Context) {
 	userID := c.GetUint("user_id")

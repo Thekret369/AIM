@@ -30,10 +30,25 @@
     </div>
 
     <!-- 右侧聊天区 -->
-    <div class="chat-main">
+    <div class="chat-main" id="chatMain">
         <div class="tab-bar" id="tabBar"></div>
-        <div class="tab-panels" id="tabPanels">
-            <div class="no-chat-placeholder" id="noChatPlaceholder">选择好友或群组开始聊天</div>
+        <div style="display:flex;flex:1;overflow:hidden">
+            <div class="tab-panels" id="tabPanels">
+                <div class="no-chat-placeholder" id="noChatPlaceholder">选择好友或群组开始聊天</div>
+            </div>
+            <!-- 群详情右侧抽屉 -->
+            <div class="group-panel hidden" id="groupPanel">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #e0e4e8;background:#f9f9f9;flex-shrink:0">
+                    <span style="font-weight:500" id="gpTitle">群详情</span>
+                    <span style="cursor:pointer;font-size:18px;color:#999;line-height:1" onclick="closeGroupPanel()">&times;</span>
+                </div>
+                <div class="group-panel-tabs">
+                    <button class="gp-tab-btn active" data-gp-tab="info" onclick="switchGroupPanelTab('info')">群资料</button>
+                    <button class="gp-tab-btn" data-gp-tab="announce" onclick="switchGroupPanelTab('announce')">群公告</button>
+                    <button class="gp-tab-btn" data-gp-tab="members" onclick="switchGroupPanelTab('members')">成员</button>
+                </div>
+                <div class="group-panel-body" id="groupPanelBody"></div>
+            </div>
         </div>
     </div>
 </div>
@@ -46,14 +61,19 @@ document.getElementById('navUser').textContent = getUserNickname();
 // 核心状态
 // ========================================
 let sidebarMode = 'friends';
-let sidebarFriends = [];       // GET /api/friends 返回
-let sidebarGroups = [];        // GET /api/groups 返回
-let chatTabs = new Map();      // key → TabState
+let sidebarFriends = [];
+let sidebarGroups = [];
+let chatTabs = new Map();
 let activeTabKey = null;
-let unreadCounts = new Map();  // key → number
-let lastMessages = new Map();  // key → message
+let unreadCounts = new Map();
+let lastMessages = new Map();
 
-// TabState: { type, targetId, name, messages[], historyPage, hasMore, panelEl, messagesEl, inputEl }
+// 群详情面板状态
+let currentGroupPanelKey = null;
+let groupPanelData = null;
+let groupPanelActiveTab = 'info';
+
+// TabState: { type, targetId, name, messages[], historyPage, hasMore, panelEl, messagesEl, inputEl, headerEl, tabEl }
 
 // ========================================
 // 侧边栏
@@ -85,7 +105,6 @@ function renderSidebar() {
     var html = '';
 
     if (sidebarMode === 'friends') {
-        // 广播置顶
         var bcKey = 'broadcast';
         var bcUnread = unreadCounts.get(bcKey) || 0;
         var bcPreview = lastMessages.get(bcKey);
@@ -93,7 +112,7 @@ function renderSidebar() {
 
         sidebarFriends.forEach(function(f) {
             var key = 'user:' + f.friend_id;
-            var name = f.remark || ('用户' + f.friend_id);
+            var name = f.remark || f.nickname || f.username || ('用户' + f.friend_id);
             var unread = unreadCounts.get(key) || 0;
             var preview = lastMessages.get(key);
             html += sidebarItemHTML(key, name.charAt(0), name, preview, unread);
@@ -109,7 +128,6 @@ function renderSidebar() {
 
     list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#999;">暂无</div>';
 
-    // 绑定点击
     list.querySelectorAll('.sidebar-item').forEach(function(el) {
         el.addEventListener('click', function() {
             var key = this.dataset.key;
@@ -169,9 +187,7 @@ function resortSidebarItem(key) {
     if (!el) return;
     var list = document.getElementById('sidebarList');
     var firstItem = list.querySelector('.sidebar-item');
-    // 广播始终置顶
     if (key === 'broadcast') return;
-    // 将该项移到广播之后、其余项之前
     if (firstItem && firstItem.dataset.key === 'broadcast') {
         list.insertBefore(el, firstItem.nextSibling);
     }
@@ -188,7 +204,6 @@ function openOrSwitchTab(key, type, targetId, name) {
         switchToTab(key);
         loadHistory(key, 1);
     }
-    // 清未读
     unreadCounts.set(key, 0);
     updateSidebarBadge(key);
     updateTabBadge(key);
@@ -212,16 +227,29 @@ function createTab(key, type, targetId, name) {
     });
     document.getElementById('tabBar').appendChild(tabEl);
 
-    // 面板
+    // 面板 — 群聊 header 带"群详情"按钮
     var panelEl = document.createElement('div');
     panelEl.className = 'tab-panel hidden';
-    panelEl.innerHTML =
-        '<div class="chat-header">' + escapeHtml(name) + '</div>' +
-        '<div class="chat-messages"></div>' +
-        '<div class="chat-input">' +
-            '<input type="text" placeholder="输入消息...">' +
-            '<button>发送</button>' +
-        '</div>';
+    if (type === 'group') {
+        panelEl.innerHTML =
+            '<div class="chat-header" style="display:flex;justify-content:space-between;align-items:center">' +
+                '<span>' + escapeHtml(name) + '</span>' +
+                '<button class="btn btn-sm btn-primary" style="font-size:12px;padding:2px 10px">群详情</button>' +
+            '</div>' +
+            '<div class="chat-messages"></div>' +
+            '<div class="chat-input">' +
+                '<input type="text" placeholder="输入消息...">' +
+                '<button>发送</button>' +
+            '</div>';
+    } else {
+        panelEl.innerHTML =
+            '<div class="chat-header">' + escapeHtml(name) + '</div>' +
+            '<div class="chat-messages"></div>' +
+            '<div class="chat-input">' +
+                '<input type="text" placeholder="输入消息...">' +
+                '<button>发送</button>' +
+            '</div>';
+    }
     var inputEl = panelEl.querySelector('input');
     var btnEl = panelEl.querySelector('button');
     inputEl.addEventListener('keydown', function(e) {
@@ -242,6 +270,8 @@ function createTab(key, type, targetId, name) {
         }
     });
 
+    var headerEl = panelEl.querySelector('.chat-header');
+
     chatTabs.set(key, {
         type: type,
         targetId: targetId,
@@ -253,9 +283,17 @@ function createTab(key, type, targetId, name) {
         panelEl: panelEl,
         messagesEl: panelMessagesEl,
         inputEl: inputEl,
-        headerEl: panelEl.querySelector('.chat-header'),
+        headerEl: headerEl,
         tabEl: tabEl
     });
+
+    // 群详情按钮点击事件
+    if (type === 'group') {
+        headerEl.querySelector('button').addEventListener('click', function(e) {
+            e.stopPropagation();
+            toggleGroupPanel(key);
+        });
+    }
 }
 
 function switchToTab(key) {
@@ -272,7 +310,6 @@ function switchToTab(key) {
     activeTabKey = key;
     tab.inputEl.focus();
 
-    // 隐藏空状态占位
     var placeholder = document.getElementById('noChatPlaceholder');
     if (placeholder) placeholder.style.display = 'none';
 
@@ -280,6 +317,17 @@ function switchToTab(key) {
     document.querySelectorAll('.sidebar-item').forEach(function(el) {
         el.classList.toggle('active', el.dataset.key === key);
     });
+
+    // 群详情面板跟随标签切换
+    var panel = document.getElementById('groupPanel');
+    if (!panel.classList.contains('hidden')) {
+        if (tab.type === 'group') {
+            currentGroupPanelKey = key;
+            loadGroupPanel(key);
+        } else {
+            closeGroupPanel();
+        }
+    }
 }
 
 function closeTab(key) {
@@ -287,12 +335,15 @@ function closeTab(key) {
     if (!tab) return;
     var wasActive = (key === activeTabKey);
 
-    // 查找相邻标签
     var keys = Array.from(chatTabs.keys());
     var idx = keys.indexOf(key);
     var fallbackKey = keys[idx + 1] || keys[idx - 1] || null;
 
-    // 移除 DOM
+    // 如果该标签的群详情面板正在显示，关闭面板
+    if (currentGroupPanelKey === key) {
+        closeGroupPanel();
+    }
+
     tab.panelEl.remove();
     tab.tabEl.remove();
     chatTabs.delete(key);
@@ -302,7 +353,6 @@ function closeTab(key) {
         if (fallbackKey) {
             switchToTab(fallbackKey);
         } else {
-            // 无标签，显示占位
             var placeholder = document.getElementById('noChatPlaceholder');
             if (placeholder) placeholder.style.display = '';
         }
@@ -323,6 +373,320 @@ function updateTabBadge(key) {
 }
 
 // ========================================
+// 群详情面板
+// ========================================
+
+// 展开/收起群详情抽屉
+function toggleGroupPanel(key) {
+    var panel = document.getElementById('groupPanel');
+    if (panel.classList.contains('hidden')) {
+        panel.classList.remove('hidden');
+        currentGroupPanelKey = key;
+        groupPanelActiveTab = 'info';
+        document.querySelectorAll('.group-panel-tabs .gp-tab-btn').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.gpTab === 'info');
+        });
+        loadGroupPanel(key);
+    } else if (currentGroupPanelKey === key) {
+        closeGroupPanel();
+    } else {
+        currentGroupPanelKey = key;
+        groupPanelActiveTab = 'info';
+        document.querySelectorAll('.group-panel-tabs .gp-tab-btn').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.gpTab === 'info');
+        });
+        loadGroupPanel(key);
+    }
+}
+
+function closeGroupPanel() {
+    document.getElementById('groupPanel').classList.add('hidden');
+    currentGroupPanelKey = null;
+    groupPanelData = null;
+}
+
+// 切换群详情面板内的标签页
+function switchGroupPanelTab(tab) {
+    groupPanelActiveTab = tab;
+    document.querySelectorAll('.group-panel-tabs .gp-tab-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.gpTab === tab);
+    });
+    renderGroupPanelBody();
+}
+
+// 加载群详情数据
+async function loadGroupPanel(key) {
+    var parts = key.split(':');
+    var groupId = parseInt(parts[1]);
+    if (!groupId) return;
+
+    try {
+        // 并行加载群详情和成员列表
+        var detailData = await api('GET', '/groups/' + groupId);
+        var membersData = await api('GET', '/groups/' + groupId + '/members');
+
+        groupPanelData = {
+            group: detailData.group,
+            myRole: detailData.my_role || '',
+            isMuted: detailData.is_muted || false,
+            members: membersData.members || []
+        };
+
+        document.getElementById('gpTitle').textContent = groupPanelData.group.name || '群详情';
+        renderGroupPanelBody();
+    } catch(e) {
+        document.getElementById('groupPanelBody').innerHTML =
+            '<div class="gp-section" style="color:#e74c3c;text-align:center;padding:20px">加载失败: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+// 根据当前标签页渲染面板内容
+function renderGroupPanelBody() {
+    if (!groupPanelData) return;
+    switch (groupPanelActiveTab) {
+        case 'info': renderGroupInfo(); break;
+        case 'announce': renderGroupAnnounce(); break;
+        case 'members': renderGroupMembers(); break;
+    }
+}
+
+// ---- 群资料标签 ----
+function renderGroupInfo() {
+    var g = groupPanelData.group;
+    var ownerName = '';
+    var ownerMember = groupPanelData.members.find(function(m) { return m.user_id === g.owner_id; });
+    if (ownerMember) {
+        ownerName = ownerMember.nickname || ownerMember.username || ('用户' + g.owner_id);
+    } else {
+        ownerName = '用户' + g.owner_id;
+    }
+    var createdAt = g.created_at ? new Date(g.created_at).toLocaleString('zh-CN') : '-';
+
+    var html = '<div class="gp-section">' +
+        '<h3>基本信息</h3>' +
+        '<div class="gp-row"><span>群名称</span><span>' + escapeHtml(g.name) + '</span></div>' +
+        '<div class="gp-row"><span>群主</span><span>' + escapeHtml(ownerName) + '</span></div>' +
+        '<div class="gp-row"><span>创建时间</span><span>' + escapeHtml(createdAt) + '</span></div>' +
+        '<div class="gp-row"><span>成员数</span><span>' + groupPanelData.members.length + '</span></div>' +
+    '</div>';
+
+    // 群主可编辑群名称
+    if (groupPanelData.myRole === 'owner') {
+        html += '<div class="gp-section">' +
+            '<h3>编辑群名称</h3>' +
+            '<input class="gp-input" id="gpEditName" value="' + escapeHtml(g.name) + '" placeholder="输入新群名称">' +
+            '<div class="gp-actions" style="margin-top:8px">' +
+                '<button class="gp-btn gp-btn-primary" onclick="saveGroupInfo(' + g.id + ')">保存</button>' +
+            '</div>' +
+        '</div>';
+    }
+
+    document.getElementById('groupPanelBody').innerHTML = html;
+}
+
+function saveGroupInfo(groupId) {
+    var newName = document.getElementById('gpEditName').value.trim();
+    if (!newName) return;
+    api('PUT', '/groups/' + groupId, { name: newName }).then(function() {
+        // 更新内存数据
+        groupPanelData.group.name = newName;
+        // 更新 tab 名称和 header
+        var key = 'group:' + groupId;
+        var tab = chatTabs.get(key);
+        if (tab) {
+            tab.name = newName;
+            tab.tabEl.querySelector('.tab-name').textContent = newName;
+            var hSpan = tab.headerEl.querySelector('span');
+            if (hSpan) hSpan.textContent = newName;
+        }
+        // 更新侧边栏
+        var g = sidebarGroups.find(function(g) { return g.id === groupId; });
+        if (g) g.name = newName;
+        renderSidebar();
+        renderGroupInfo();
+    }).catch(function(e) {
+        alert('保存失败: ' + e.message);
+    });
+}
+
+// ---- 群公告标签 ----
+function renderGroupAnnounce() {
+    var g = groupPanelData.group;
+    var announce = g.announce || '';
+    var html = '';
+
+    if (announce) {
+        html += '<div class="gp-section">' +
+            '<h3>当前公告</h3>' +
+            '<div class="announce-content">' + escapeHtml(announce) + '</div>' +
+        '</div>';
+    } else {
+        html += '<div class="gp-section">' +
+            '<h3>当前公告</h3>' +
+            '<div style="color:#999;padding:12px">暂无公告</div>' +
+        '</div>';
+    }
+
+    // 群主和管理员可编辑公告
+    if (groupPanelData.myRole === 'owner' || groupPanelData.myRole === 'admin') {
+        html += '<div class="gp-section">' +
+            '<h3>编辑公告</h3>' +
+            '<textarea class="gp-textarea" id="gpEditAnnounce" placeholder="输入群公告...">' + escapeHtml(announce) + '</textarea>' +
+            '<div class="gp-actions" style="margin-top:8px">' +
+                '<button class="gp-btn gp-btn-primary" onclick="saveAnnounce(' + g.id + ')">发布</button>' +
+            '</div>' +
+        '</div>';
+    }
+
+    document.getElementById('groupPanelBody').innerHTML = html;
+}
+
+function saveAnnounce(groupId) {
+    var text = document.getElementById('gpEditAnnounce').value;
+    api('PUT', '/groups/' + groupId, { announce: text }).then(function() {
+        groupPanelData.group.announce = text;
+        renderGroupAnnounce();
+    }).catch(function(e) {
+        alert('保存失败: ' + e.message);
+    });
+}
+
+// ---- 群成员标签 ----
+function renderGroupMembers() {
+    var myRole = groupPanelData.myRole;
+    var myUserId = getUserId();
+    var html = '<div class="gp-section"><h3>群成员 (' + groupPanelData.members.length + ')</h3>';
+
+    // 群主/管理员可添加成员
+    if (myRole === 'owner' || myRole === 'admin') {
+        html += '<div class="gp-row" style="margin-bottom:10px">' +
+            '<input type="number" id="gpAddMemberInput" placeholder="输入用户 ID" class="gp-input" style="width:120px;margin:0">' +
+            '<button class="gp-btn gp-btn-primary" onclick="addMemberAction(' + groupPanelData.group.id + ')" style="margin-left:6px">添加成员</button>' +
+        '</div>';
+    }
+
+    groupPanelData.members.forEach(function(m) {
+        var displayName = m.nickname || m.username || ('用户' + m.user_id);
+        var roleLabel = '';
+        var roleCls = '';
+        if (m.role === 'owner') { roleLabel = '群主'; roleCls = 'owner'; }
+        else if (m.role === 'admin') { roleLabel = '管理员'; roleCls = 'admin'; }
+        else { roleLabel = '成员'; roleCls = 'member'; }
+
+        var isMuted = m.muted_until && new Date(m.muted_until) > new Date();
+
+        html += '<div class="gp-member-item" data-user-id="' + m.user_id + '">' +
+            '<div class="member-info">' +
+                '<span>' + escapeHtml(displayName.charAt(0)) + '</span>' +
+                '<span style="margin-left:6px">' + escapeHtml(displayName) + '</span>' +
+                '<span class="role-tag ' + roleCls + '">' + roleLabel + '</span>' +
+                (isMuted ? '<span class="muted-tag">禁言中</span>' : '') +
+            '</div>' +
+            '<div class="gp-actions">';
+
+        // 权限按钮
+        if (m.user_id !== myUserId) {
+            if (myRole === 'owner' && m.role !== 'owner') {
+                // 群主对所有非群主成员的操作
+                if (isMuted) {
+                    html += '<button class="gp-btn gp-btn-warn" onclick="unmuteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">解禁</button>';
+                } else {
+                    html += '<button class="gp-btn gp-btn-warn" onclick="muteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">禁言</button>';
+                }
+                html += '<button class="gp-btn gp-btn-danger" onclick="kickMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">踢出</button>';
+                if (m.role === 'admin') {
+                    html += '<button class="gp-btn" style="background:#888;color:#fff" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">取消管理</button>';
+                } else {
+                    html += '<button class="gp-btn" style="background:#2b5f8a;color:#fff" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">设管理</button>';
+                }
+                html += '<button class="gp-btn gp-btn-primary" onclick="transferOwnerAction(' + groupPanelData.group.id + ',' + m.user_id + ')">转让</button>';
+            } else if (myRole === 'admin' && m.role === 'member') {
+                // 管理员对普通成员的操作
+                if (isMuted) {
+                    html += '<button class="gp-btn gp-btn-warn" onclick="unmuteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">解禁</button>';
+                } else {
+                    html += '<button class="gp-btn gp-btn-warn" onclick="muteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">禁言</button>';
+                }
+                html += '<button class="gp-btn gp-btn-danger" onclick="kickMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">踢出</button>';
+            }
+        }
+
+        html += '</div></div>';
+    });
+
+    html += '</div>';
+    document.getElementById('groupPanelBody').innerHTML = html;
+}
+
+// ---- 群操作函数 ----
+
+function addMemberAction(groupId) {
+    var userId = parseInt(document.getElementById('gpAddMemberInput').value);
+    if (!userId) { alert('请输入有效的用户 ID'); return; }
+    api('POST', '/groups/' + groupId + '/add-member', { user_id: userId }).then(function() {
+        document.getElementById('gpAddMemberInput').value = '';
+        reloadGroupPanel();
+    }).catch(function(e) {
+        alert('添加失败: ' + e.message);
+    });
+}
+
+function kickMemberAction(groupId, userId) {
+    if (!confirm('确认踢出该成员？')) return;
+    api('POST', '/groups/' + groupId + '/kick', { user_id: userId }).then(function() {
+        reloadGroupPanel();
+    }).catch(function(e) {
+        alert('操作失败: ' + e.message);
+    });
+}
+
+function muteMemberAction(groupId, userId) {
+    var minutes = prompt('请输入禁言分钟数:', '10');
+    if (!minutes) return;
+    minutes = parseInt(minutes);
+    if (!minutes || minutes < 1) return;
+    api('POST', '/groups/' + groupId + '/mute', { user_id: userId, minutes: minutes }).then(function() {
+        reloadGroupPanel();
+    }).catch(function(e) {
+        alert('操作失败: ' + e.message);
+    });
+}
+
+function unmuteMemberAction(groupId, userId) {
+    api('POST', '/groups/' + groupId + '/unmute', { user_id: userId }).then(function() {
+        reloadGroupPanel();
+    }).catch(function(e) {
+        alert('操作失败: ' + e.message);
+    });
+}
+
+function setAdminAction(groupId, userId) {
+    api('PUT', '/groups/' + groupId + '/admin/' + userId).then(function() {
+        reloadGroupPanel();
+    }).catch(function(e) {
+        alert('操作失败: ' + e.message);
+    });
+}
+
+function transferOwnerAction(groupId, userId) {
+    if (!confirm('确认将群主转让给该成员？此操作不可撤销。')) return;
+    api('PUT', '/groups/' + groupId + '/transfer', { new_owner_id: userId }).then(function() {
+        reloadGroupPanel();
+    }).catch(function(e) {
+        alert('操作失败: ' + e.message);
+    });
+}
+
+// 重新加载群详情面板
+function reloadGroupPanel() {
+    if (currentGroupPanelKey) {
+        loadGroupPanel(currentGroupPanelKey);
+        // 同步刷新侧边栏群列表
+        loadGroups().then(function() { renderSidebar(); });
+    }
+}
+
+// ========================================
 // 消息接收路由
 // ========================================
 onMessage = function(msg) {
@@ -332,14 +696,12 @@ onMessage = function(msg) {
     if (msg.group_id !== null && msg.group_id !== undefined && msg.group_id !== 0) {
         key = 'group:' + msg.group_id;
     } else if (msg.to_user_id !== null && msg.to_user_id !== undefined && msg.to_user_id !== 0) {
-        // 单聊：peerId 是对方
         var peerId = (msg.from_user_id === myId) ? msg.to_user_id : msg.from_user_id;
         key = 'user:' + peerId;
     } else {
         key = 'broadcast';
     }
 
-    // 更新最后消息
     lastMessages.set(key, msg);
     updateSidebarPreview(key, msg);
     resortSidebarItem(key);
@@ -405,7 +767,6 @@ function sendMessage(key) {
     } else if (tab.type === 'group') {
         msg.group_id = tab.targetId;
     }
-    // broadcast: 不设 to/group
 
     sendWS(msg);
     tab.inputEl.value = '';
@@ -435,7 +796,7 @@ async function loadHistory(key, page) {
             tab.hasMore = false;
             return;
         }
-        var newMsgs = data.messages.reverse(); // 服务端返回最新在前，反转为时间正序
+        var newMsgs = data.messages.reverse();
 
         if (page === 1) {
             tab.messages = newMsgs;

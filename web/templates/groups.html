@@ -25,6 +25,7 @@
     </div>
     <div class="section">
         <button class="btn btn-primary" onclick="showCreateGroup()">创建群组</button>
+        <button class="btn btn-primary" onclick="showJoinGroup()" style="margin-left:8px">加入群组</button>
     </div>
 </div>
 
@@ -36,6 +37,17 @@
         <button class="btn btn-primary" onclick="createGroup()">创建</button>
         <button class="btn" onclick="closeModal('createGroupModal')">取消</button>
         <div class="error" id="createError"></div>
+    </div>
+</div>
+
+<!-- 加入群组弹窗 -->
+<div id="joinGroupModal" class="modal">
+    <div class="modal-content">
+        <h3>加入群组</h3>
+        <input type="number" id="joinGroupId" placeholder="输入群组 ID">
+        <button class="btn btn-primary" onclick="joinGroup()">加入</button>
+        <button class="btn" onclick="closeModal('joinGroupModal')">取消</button>
+        <div class="error" id="joinError"></div>
     </div>
 </div>
 
@@ -90,6 +102,19 @@ async function createGroup() {
         closeModal('createGroupModal');
         loadGroups();
     } catch(e) { document.getElementById('createError').textContent = e.message; }
+}
+
+function showJoinGroup() { document.getElementById('joinGroupModal').classList.add('show'); }
+
+async function joinGroup() {
+    const groupId = parseInt(document.getElementById('joinGroupId').value);
+    if (!groupId) { document.getElementById('joinError').textContent = '请输入群组 ID'; return; }
+    try {
+        await api('POST', '/groups/' + groupId + '/join');
+        closeModal('joinGroupModal');
+        document.getElementById('joinGroupId').value = '';
+        loadGroups();
+    } catch(e) { document.getElementById('joinError').textContent = e.message; }
 }
 
 async function viewMembers(groupId) {

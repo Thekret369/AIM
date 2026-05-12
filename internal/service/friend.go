@@ -9,6 +9,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// FriendInfo 好友信息（含对方用户资料）
+type FriendInfo struct {
+	ID       uint   `json:"id"`
+	UserID   uint   `json:"user_id"`
+	FriendID uint   `json:"friend_id"`
+	Username string `json:"username"`
+	Nickname string `json:"nickname"`
+	Status   string `json:"status"`
+	Remark   string `json:"remark"`
+	Note     string `json:"note"`
+}
+
 type FriendService struct{}
 
 // AddFriend 发送好友申请，status=pending
@@ -60,10 +72,19 @@ func (s *FriendService) HandleRequest(relationID, userID uint, accept bool) erro
 
 	if accept {
 		rel.Status = "accepted"
+		if err := model.DB.Save(&rel).Error; err != nil {
+			return err
+		}
+		// 双向创建：被添加方也能在好友列表中看到对方
+		reverse := &model.FriendRelation{
+			UserID:   rel.FriendID,
+			FriendID: rel.UserID,
+			Status:   "accepted",
+		}
+		return model.DB.Create(reverse).Error
 	} else {
 		return model.DB.Delete(&rel).Error // 拒绝则删除记录
 	}
-	return model.DB.Save(&rel).Error
 }
 
 // DeleteFriend 删除好友（双向删除）
@@ -81,25 +102,85 @@ func (s *FriendService) UpdateRemark(userID, friendID uint, remark, note string,
 		Updates(map[string]interface{}{"remark": remark, "note": note, "group_id": groupID}).Error
 }
 
-// FriendList 获取好友列表（含备注和分组信息）
-func (s *FriendService) FriendList(userID uint) ([]model.FriendRelation, error) {
+// FriendList 获取好友列表（含对方用户名/昵称）
+func (s *FriendService) FriendList(userID uint) ([]FriendInfo, error) {
 	var list []model.FriendRelation
 	if err := model.DB.Where("user_id = ? AND status = 'accepted'", userID).
 		Find(&list).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return []model.FriendRelation{}, nil
+			return []FriendInfo{}, nil
 		}
 		return nil, err
 	}
-	return list, nil
+	if len(list) == 0 {
+		return []FriendInfo{}, nil
+	}
+
+	// 批量获取好友用户信息
+	friendIDs := make([]uint, len(list))
+	for i, r := range list {
+		friendIDs[i] = r.FriendID
+	}
+	var users []model.User
+	model.DB.Where("id IN ?", friendIDs).Find(&users)
+	userMap := make(map[uint]model.User)
+	for _, u := range users {
+		userMap[u.ID] = u
+	}
+
+	result := make([]FriendInfo, len(list))
+	for i, r := range list {
+		u := userMap[r.FriendID]
+		result[i] = FriendInfo{
+			ID:       r.ID,
+			UserID:   r.UserID,
+			FriendID: r.FriendID,
+			Username: u.Username,
+			Nickname: u.Nickname,
+			Status:   r.Status,
+			Remark:   r.Remark,
+			Note:     r.Note,
+		}
+	}
+	return result, nil
 }
 
-// PendingRequests 获取待处理的好友申请
-func (s *FriendService) PendingRequests(userID uint) ([]model.FriendRelation, error) {
+// PendingRequests 获取待处理的好友申请（含申请者用户名/昵称）
+func (s *FriendService) PendingRequests(userID uint) ([]FriendInfo, error) {
 	var list []model.FriendRelation
 	if err := model.DB.Where("friend_id = ? AND status = 'pending'", userID).
 		Find(&list).Error; err != nil {
 		return nil, err
 	}
-	return list, nil
+	if len(list) == 0 {
+		return []FriendInfo{}, nil
+	}
+
+	// 批量获取申请者用户信息
+	userIDs := make([]uint, len(list))
+	for i, r := range list {
+		userIDs[i] = r.UserID
+	}
+	var users []model.User
+	model.DB.Where("id IN ?", userIDs).Find(&users)
+	userMap := make(map[uint]model.User)
+	for _, u := range users {
+		userMap[u.ID] = u
+	}
+
+	result := make([]FriendInfo, len(list))
+	for i, r := range list {
+		u := userMap[r.UserID]
+		result[i] = FriendInfo{
+			ID:       r.ID,
+			UserID:   r.UserID,
+			FriendID: r.FriendID,
+			Username: u.Username,
+			Nickname: u.Nickname,
+			Status:   r.Status,
+			Remark:   r.Remark,
+			Note:     r.Note,
+		}
+	}
+	return result, nil
 }
