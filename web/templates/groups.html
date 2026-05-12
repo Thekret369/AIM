@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIM — 群组</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="nav">
+    <span>AIM</span>
+    <div>
+        <span id="navUser"></span>
+        <a href="/contacts">联系人</a>
+        <a href="/chat">聊天</a>
+        <a href="/groups">群组</a>
+        <a href="javascript:logout()">退出</a>
+    </div>
+</div>
+<div class="container">
+    <div class="section">
+        <h2>我的群组</h2>
+        <div id="groupList" class="contact-list">加载中...</div>
+    </div>
+    <div class="section">
+        <button class="btn btn-primary" onclick="showCreateGroup()">创建群组</button>
+    </div>
+</div>
+
+<!-- 创建群组弹窗 -->
+<div id="createGroupModal" class="modal">
+    <div class="modal-content">
+        <h3>创建群组</h3>
+        <input type="text" id="newGroupName" placeholder="群组名称">
+        <button class="btn btn-primary" onclick="createGroup()">创建</button>
+        <button class="btn" onclick="closeModal('createGroupModal')">取消</button>
+        <div class="error" id="createError"></div>
+    </div>
+</div>
+
+<!-- 群成员管理弹窗 -->
+<div id="memberModal" class="modal">
+    <div class="modal-content">
+        <h3>群成员管理</h3>
+        <div id="memberList"></div>
+        <div style="margin-top:12px">
+            <input type="number" id="muteMinutes" placeholder="禁言分钟数" style="width:140px">
+            <input type="number" id="newOwnerId" placeholder="新群主用户 ID" style="width:140px">
+        </div>
+        <button class="btn" onclick="closeModal('memberModal')">关闭</button>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+document.getElementById('navUser').textContent = getUserNickname();
+let currentGroupId = 0;
+
+async function loadGroups() {
+    try {
+        const data = await api('GET', '/groups');
+        const list = document.getElementById('groupList');
+        if (!data.groups || data.groups.length === 0) {
+            list.innerHTML = '<div style="padding:12px;color:#888">暂未加入群组</div>';
+            return;
+        }
+        list.innerHTML = data.groups.map(g => `
+            <div class="contact-item">
+                <div class="avatar">群</div>
+                <div class="info">
+                    <div class="name">${escapeHtml(g.name)}</div>
+                    <div class="remark">群主 ID: ${g.owner_id} | 群 ID: ${g.id}</div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="viewMembers(${g.id})">成员</button>
+                <button class="btn btn-sm" onclick="window.location.href='/chat?type=group&peer=${g.id}'">聊天</button>
+            </div>
+        `).join('');
+    } catch(e) { document.getElementById('groupList').innerHTML = '加载失败: ' + e.message; }
+}
+
+function showCreateGroup() { document.getElementById('createGroupModal').classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+async function createGroup() {
+    const name = document.getElementById('newGroupName').value.trim();
+    if (!name) { document.getElementById('createError').textContent = '请输入群名'; return; }
+    try {
+        await api('POST', '/groups', { name: name });
+        closeModal('createGroupModal');
+        loadGroups();
+    } catch(e) { document.getElementById('createError').textContent = e.message; }
+}
+
+async function viewMembers(groupId) {
+    currentGroupId = groupId;
+    document.getElementById('memberModal').classList.add('show');
+    try {
+        const data = await api('GET', '/groups/' + groupId + '/members');
+        const list = document.getElementById('memberList');
+        list.innerHTML = data.members.map(m => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #eee">
+                <span>用户 ID: ${m.user_id} | 角色: ${m.role} ${m.muted_until ? '🔇禁言中' : ''}</span>
+                <span>
+                    <button class="btn btn-sm" onclick="muteMember(${m.user_id})">禁言</button>
+                    <button class="btn btn-danger btn-sm" onclick="kickMember(${m.user_id})">踢出</button>
+                    <button class="btn btn-sm" onclick="transferOwner(${m.user_id})">转让</button>
+                </span>
+            </div>
+        `).join('');
+    } catch(e) { document.getElementById('memberList').innerHTML = '加载失败: ' + e.message; }
+}
+
+async function muteMember(userId) {
+    const minutes = parseInt(document.getElementById('muteMinutes').value) || 30;
+    try {
+        await api('POST', '/groups/' + currentGroupId + '/mute', { user_id: userId, minutes: minutes });
+        viewMembers(currentGroupId);
+    } catch(e) { alert(e.message); }
+}
+
+async function kickMember(userId) {
+    if (!confirm('确认踢出该成员？')) return;
+    try {
+        await api('POST', '/groups/' + currentGroupId + '/kick', { user_id: userId });
+        viewMembers(currentGroupId);
+    } catch(e) { alert(e.message); }
+}
+
+async function transferOwner(userId) {
+    if (!confirm('确认将群主转让给用户 ' + userId + '？')) return;
+    try {
+        await api('PUT', '/groups/' + currentGroupId + '/transfer', { new_owner_id: userId });
+        viewMembers(currentGroupId);
+    } catch(e) { alert(e.message); }
+}
+
+function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+loadGroups();
+</script>
+</body>
+</html>

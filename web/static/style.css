@@ -1,0 +1,59 @@
+/* AIM 即时通讯系统样式 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; color: #333; }
+
+/* 导航栏 */
+.nav { background: #2b5f8a; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+.nav a { color: #fff; text-decoration: none; margin-left: 16px; }
+.nav a:hover { text-decoration: underline; }
+.nav .user-info { display: flex; align-items: center; gap: 8px; }
+
+/* 登录页 */
+.login-box { width: 360px; margin: 80px auto; background: #fff; padding: 40px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+.login-box h1 { text-align: center; margin-bottom: 24px; color: #2b5f8a; }
+.login-box input { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+.login-box button { width: 100%; padding: 10px; background: #2b5f8a; color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+.login-box button:hover { background: #1e4a6e; }
+.login-box .toggle { text-align: center; margin-top: 12px; color: #2b5f8a; cursor: pointer; }
+.login-box .toggle:hover { text-decoration: underline; }
+
+/* 容器 */
+.container { max-width: 1000px; margin: 20px auto; padding: 0 20px; }
+
+/* 联系人列表 */
+.contact-list { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+.contact-item { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
+.contact-item:hover { background: #f5f7fa; }
+.contact-item .avatar { width: 40px; height: 40px; border-radius: 50%; background: #2b5f8a; color: #fff; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 16px; }
+.contact-item .info { flex: 1; }
+.contact-item .name { font-weight: 500; }
+.contact-item .remark { font-size: 12px; color: #888; }
+
+/* 聊天窗口 */
+.chat-box { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: calc(100vh - 120px); }
+.chat-header { padding: 12px 16px; border-bottom: 1px solid #eee; font-weight: 500; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 16px; }
+.chat-messages .msg { margin-bottom: 12px; display: flex; }
+.chat-messages .msg.from-me { justify-content: flex-end; }
+.chat-messages .msg .bubble { max-width: 70%; padding: 8px 14px; border-radius: 8px; background: #e8f4fd; }
+.chat-messages .msg.from-me .bubble { background: #2b5f8a; color: #fff; }
+.chat-messages .msg .meta { font-size: 11px; color: #999; margin-bottom: 4px; }
+.chat-input { padding: 12px; border-top: 1px solid #eee; display: flex; gap: 8px; }
+.chat-input input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; }
+.chat-input button { padding: 8px 20px; background: #2b5f8a; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+
+/* 通用 */
+.btn { padding: 6px 14px; border-radius: 4px; cursor: pointer; border: none; font-size: 13px; }
+.btn-primary { background: #2b5f8a; color: #fff; }
+.btn-danger { background: #e74c3c; color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+.section { margin-bottom: 20px; }
+.section h2 { font-size: 16px; margin-bottom: 10px; color: #555; }
+
+.modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; }
+.modal.show { display: flex; align-items: center; justify-content: center; }
+.modal-content { background: #fff; padding: 24px; border-radius: 8px; min-width: 300px; }
+.modal-content input, .modal-content select { width: 100%; padding: 8px; margin: 8px 0; border: 1px solid #ddd; border-radius: 4px; }
+.modal-content button { margin: 4px; }
+.error { color: #e74c3c; font-size: 13px; margin-top: 4px; }
