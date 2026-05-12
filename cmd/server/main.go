@@ -107,13 +107,18 @@ func main() {
 
 		// 群组管理
 		auth.POST("/groups", groupH.CreateGroup)
+		auth.GET("/groups", groupH.GetUserGroups)
+		auth.GET("/groups/:id", groupH.GetGroupDetail)
+		auth.PUT("/groups/:id", groupH.UpdateGroup)
 		auth.POST("/groups/:id/join", groupH.JoinGroup)
+		auth.POST("/groups/:id/add-member", groupH.AddMember)
 		auth.POST("/groups/:id/leave", groupH.LeaveGroup)
 		auth.POST("/groups/:id/kick", groupH.KickMember)
 		auth.PUT("/groups/:id/transfer", groupH.TransferOwner)
+		auth.PUT("/groups/:id/admin/:user_id", groupH.SetAdmin)
 		auth.POST("/groups/:id/mute", groupH.MuteMember)
+		auth.POST("/groups/:id/unmute", groupH.UnmuteMember)
 		auth.GET("/groups/:id/members", groupH.GetGroupMembers)
-		auth.GET("/groups", groupH.GetUserGroups)
 
 		// 个人信息
 		auth.GET("/profile", authH.GetProfile)

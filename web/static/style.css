@@ -260,3 +260,120 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	color: #bbb;
 	font-size: 15px;
 }
+
+/* ---- 群详情右侧抽屉 ---- */
+.chat-main.has-panel .tab-panels {
+	/* panel 区域自动压缩，留给抽屉空间 */
+}
+.group-panel {
+	width: 320px;
+	min-width: 320px;
+	background: #fff;
+	border-left: 1px solid #d6dbe1;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+.group-panel.hidden { display: none; }
+
+.group-panel-tabs {
+	display: flex;
+	border-bottom: 1px solid #e0e4e8;
+	flex-shrink: 0;
+}
+.group-panel-tabs .gp-tab-btn {
+	flex: 1;
+	padding: 10px 0;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	font-size: 13px;
+	color: #666;
+	border-bottom: 2px solid transparent;
+}
+.group-panel-tabs .gp-tab-btn.active {
+	color: #2b5f8a;
+	border-bottom-color: #2b5f8a;
+	font-weight: 600;
+}
+
+.group-panel-body {
+	flex: 1;
+	overflow-y: auto;
+	padding: 14px;
+}
+.group-panel-body .gp-section {
+	margin-bottom: 16px;
+}
+.group-panel-body .gp-section h3 {
+	font-size: 14px;
+	color: #555;
+	margin-bottom: 8px;
+}
+.group-panel-body .gp-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 8px 0;
+	border-bottom: 1px solid #f0f0f0;
+	font-size: 13px;
+}
+.gp-member-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 8px 0;
+	border-bottom: 1px solid #f0f0f0;
+	font-size: 13px;
+}
+.gp-member-item .member-info {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.gp-member-item .role-tag {
+	font-size: 11px;
+	padding: 1px 6px;
+	border-radius: 3px;
+}
+.role-tag.owner { background: #e8a020; color: #fff; }
+.role-tag.admin { background: #2b5f8a; color: #fff; }
+.role-tag.member { background: #e0e0e0; color: #666; }
+.muted-tag { background: #e74c3c; color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 3px; }
+.announce-content {
+	background: #f9f9f9;
+	padding: 12px;
+	border-radius: 4px;
+	font-size: 13px;
+	white-space: pre-wrap;
+	line-height: 1.6;
+}
+.gp-btn {
+	padding: 4px 10px;
+	border-radius: 3px;
+	border: none;
+	cursor: pointer;
+	font-size: 12px;
+}
+.gp-btn-primary { background: #2b5f8a; color: #fff; }
+.gp-btn-danger { background: #e74c3c; color: #fff; }
+.gp-btn-warn { background: #e8a020; color: #fff; }
+.gp-input {
+	width: 100%;
+	padding: 6px 8px;
+	border: 1px solid #ddd;
+	border-radius: 3px;
+	font-size: 13px;
+	margin-top: 6px;
+}
+.gp-textarea {
+	width: 100%;
+	padding: 8px;
+	border: 1px solid #ddd;
+	border-radius: 3px;
+	font-size: 13px;
+	resize: vertical;
+	min-height: 80px;
+	margin-top: 6px;
+}
+.gp-actions { margin-top: 8px; display: flex; gap: 6px; }
