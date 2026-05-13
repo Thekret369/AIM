@@ -71,6 +71,9 @@ type User struct {
 	// Settings 用户配置（JSON）：主题、字体、聊天偏好、隐私等
 	Settings datatypes.JSON `gorm:"type:json" json:"settings"`
 
+	// TokenVersion 登录版本号，每次登录+1，用于踢出旧登录
+	TokenVersion int `gorm:"default:0" json:"-"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

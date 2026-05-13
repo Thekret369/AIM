@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"AIM/internal/middleware"
 	"AIM/internal/model"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -55,6 +56,15 @@ func (s *AuthService) Login(username, password string) (string, *model.User, err
 		return "", nil, errors.New("用户名或密码错误")
 	}
 
+	// 递增 TokenVersion（原子操作，避免并发登录的竞态条件）
+	if err := model.DB.Model(&user).Update("token_version", gorm.Expr("token_version + 1")).Error; err != nil {
+		return "", nil, err
+	}
+	// 重新读取最新版本号
+	if err := model.DB.First(&user, user.ID).Error; err != nil {
+		return "", nil, err
+	}
+
 	token, err := s.generateToken(&user)
 	if err != nil {
 		return "", nil, err
@@ -62,13 +72,16 @@ func (s *AuthService) Login(username, password string) (string, *model.User, err
 	return token, &user, nil
 }
 
-// generateToken 签发 JWT
+// generateToken 签发 JWT，写入 token_version 用于顶出旧登录
 func (s *AuthService) generateToken(user *model.User) (string, error) {
-	claims := jwt.MapClaims{
-		"user_id":  user.ID,
-		"username": user.Username,
-		"exp":      time.Now().Add(time.Duration(s.JWTExpireHrs) * time.Hour).Unix(),
-		"iat":      time.Now().Unix(),
+	claims := &middleware.Claims{
+		UserID:       user.ID,
+		Username:     user.Username,
+		TokenVersion: user.TokenVersion,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(s.JWTExpireHrs) * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.JWTSecret))

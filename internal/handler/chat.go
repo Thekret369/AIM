@@ -9,7 +9,6 @@ import (
 	"AIM/internal/ws"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
 
@@ -27,20 +26,16 @@ var upgrader = websocket.Upgrader{
 }
 
 // HandleWS 升级 WebSocket 连接
-// 浏览器 WebSocket API 不支持自定义 Header，所以 token 通过查询参数 ?token=xxx 传递
+// 浏览器 WebSocket API 不支持自定义 Header，token 通过查询参数 ?token=xxx 传递
 func (h *ChatHandler) HandleWS(c *gin.Context) {
-	// 优先从查询参数取 token（浏览器 WebSocket），回退到 Header（原生客户端）
 	tokenStr := c.Query("token")
 	if tokenStr == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少 token"})
 		return
 	}
 
-	claims := &middleware.Claims{}
-	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
-		return []byte(h.JWTSecret), nil
-	})
-	if err != nil || !token.Valid {
+	claims, err := middleware.ParseToken(tokenStr, h.JWTSecret)
+	if err != nil || claims == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "token 无效或已过期"})
 		return
 	}
