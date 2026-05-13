@@ -3,23 +3,23 @@
 /* ---- CSS 变量：主题与字体 ---- */
 :root {
 	/* 浅蓝色背景 + 白色卡片 */
-	--bg: #e8f0f8;
+	--bg: #eff4f9;
 	--surface: #ffffff;
-	--surface-hover: #f0f5fb;
+	--surface-hover: #f5f8fc;
 	--text: #1a1a2e;
 	--text-secondary: #4a5568;
 	--text-muted: #8899aa;
-	--border: #cddae6;
-	--border-light: #e2eaf2;
-	--nav-bg: #3b82c4;
+	--border: #d2dde8;
+	--border-light: #e6eef6;
+	--nav-bg: #5599d0;
 	--nav-text: #ffffff;
-	--primary: #4a90d9;
-	--primary-hover: #3b7cc4;
-	--bubble-friend: #e3eef8;
-	--bubble-me: #4a90d9;
+	--primary: #5599d0;
+	--primary-hover: #4589c0;
+	--bubble-friend: #e8f0f9;
+	--bubble-me: #5599d0;
 	--bubble-me-text: #ffffff;
 	--input-bg: #ffffff;
-	--input-border: #cddae6;
+	--input-border: #d2dde8;
 	--font-scale: 1;
 
 	/* 过渡动画 */
@@ -37,7 +37,7 @@ body.theme-dark {
 	--text-muted: #707070;
 	--border: #333333;
 	--border-light: #252525;
-	--nav-bg: #060606;
+	--nav-bg: #1e1e1e;
 	--nav-text: #cccccc;
 	--primary: #606060;
 	--primary-hover: #787878;
