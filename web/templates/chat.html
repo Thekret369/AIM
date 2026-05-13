@@ -694,6 +694,9 @@ function reloadGroupPanel() {
 // ========================================
 onMessage = function(msg) {
     var myId = getUserId();
+    // 非自己发送的消息播放提示音
+    if (msg.from_user_id !== myId) playMessageSound();
+
     var key;
 
     if (msg.group_id !== null && msg.group_id !== undefined && msg.group_id !== 0) {

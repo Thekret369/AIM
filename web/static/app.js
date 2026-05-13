@@ -145,11 +145,53 @@ async function loadAndApplySettings() {
         const s = data.settings;
         applyTheme(s.theme || 'light');
         applyFontSize(s.font_size || 'medium');
+        window.__soundEnabled = s.sound_enabled !== false;
         return s;
     } catch (e) {
-        // 未配置或请求失败，使用默认值
         applyTheme('light');
         applyFontSize('medium');
+        window.__soundEnabled = true;
         return null;
+    }
+}
+
+// ========================================
+// 消息提示音（Web Audio API 生成，无需外部文件）
+// ========================================
+
+function playMessageSound() {
+    if (window.__soundEnabled === false) return;
+    try {
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // 第一频：800Hz，短促 80ms
+        var osc1 = ctx.createOscillator();
+        var gain1 = ctx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.value = 800;
+        gain1.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+        osc1.start(ctx.currentTime);
+        osc1.stop(ctx.currentTime + 0.08);
+
+        // 第二频：1200Hz，延迟 40ms 叠加
+        var osc2 = ctx.createOscillator();
+        var gain2 = ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.value = 1200;
+        gain2.gain.setValueAtTime(0.001, ctx.currentTime);
+        gain2.gain.setValueAtTime(0.25, ctx.currentTime + 0.04);
+        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(ctx.currentTime + 0.04);
+        osc2.stop(ctx.currentTime + 0.15);
+
+        // 播放完后关闭 AudioContext
+        setTimeout(function() { ctx.close(); }, 200);
+    } catch(e) {
+        // 浏览器不支持或音频被阻止，静默处理
     }
 }
