@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIM — 聊天</title>
+    <title>AIM — 消息</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -12,19 +12,15 @@
     <div>
         <a href="/profile" id="navUser" class="nav-user-link"></a>
         <a href="/contacts">联系人</a>
-        <a href="/chat">聊天</a>
+        <a href="/chat">消息</a>
         <a href="/groups">群组</a>
         <a href="/settings">设置</a>
     </div>
 </div>
 
 <div class="chat-layout">
-    <!-- 左侧边栏 -->
+    <!-- 左侧边栏：统一会话列表 -->
     <div class="chat-sidebar">
-        <div class="sidebar-tabs">
-            <button class="tab-btn active" onclick="switchSidebarTab('friends')">好友</button>
-            <button class="tab-btn" onclick="switchSidebarTab('groups')">群组</button>
-        </div>
         <div class="sidebar-list" id="sidebarList"></div>
     </div>
 
@@ -63,23 +59,22 @@ navUserEl.href = '/profile';
 // ========================================
 // 核心状态
 // ========================================
-let sidebarMode = 'friends';
 let sidebarFriends = [];
 let sidebarGroups = [];
+let conversations = [];       // 统一会话列表 { key, type, targetId, name, avatarChar }
+let lastTimestamps = new Map(); // key → Date，用于排序
 let chatTabs = new Map();
 let activeTabKey = null;
 let unreadCounts = new Map();
-let lastMessages = new Map();
+let lastMessages = new Map(); // key → 最新消息对象（含 content 用于预览）
 
 // 群详情面板状态
 let currentGroupPanelKey = null;
 let groupPanelData = null;
 let groupPanelActiveTab = 'info';
 
-// TabState: { type, targetId, name, messages[], historyPage, hasMore, panelEl, messagesEl, inputEl, headerEl, tabEl }
-
 // ========================================
-// 侧边栏
+// 数据加载
 // ========================================
 async function loadFriends() {
     try {
@@ -95,41 +90,122 @@ async function loadGroups() {
     } catch(e) { sidebarGroups = []; }
 }
 
-function switchSidebarTab(mode) {
-    sidebarMode = mode;
-    document.querySelectorAll('.sidebar-tabs .tab-btn').forEach(function(btn) {
-        btn.classList.toggle('active', btn.textContent === (mode === 'friends' ? '好友' : '群组'));
+// ========================================
+// 统一会话列表构建 & 排序
+// ========================================
+
+// 合并广播 + 好友 + 群组为统一会话数组
+function buildConversations() {
+    conversations = [];
+
+    // 广播始终在 conversations[0]
+    conversations.push({
+        key: 'broadcast',
+        type: 'broadcast',
+        targetId: 0,
+        name: '广播消息',
+        avatarChar: '📢'
     });
-    renderSidebar();
+
+    sidebarFriends.forEach(function(f) {
+        var name = f.remark || f.nickname || f.username || ('用户' + f.friend_id);
+        conversations.push({
+            key: 'user:' + f.friend_id,
+            type: 'user',
+            targetId: f.friend_id,
+            name: name,
+            avatarChar: name.charAt(0)
+        });
+    });
+
+    sidebarGroups.forEach(function(g) {
+        conversations.push({
+            key: 'group:' + g.id,
+            type: 'group',
+            targetId: g.id,
+            name: g.name,
+            avatarChar: g.name.charAt(0)
+        });
+    });
 }
 
+// 按最后消息时间降序，广播始终置顶
+function sortConversations() {
+    conversations.sort(function(a, b) {
+        if (a.key === 'broadcast') return -1;
+        if (b.key === 'broadcast') return 1;
+        var ta = lastTimestamps.get(a.key);
+        var tb = lastTimestamps.get(b.key);
+        // 有时间戳的排前面
+        if (ta && !tb) return -1;
+        if (!ta && tb) return 1;
+        if (!ta && !tb) return 0;
+        return tb - ta;
+    });
+}
+
+// 格式化时间戳为显示文本
+function formatTime(ts) {
+    if (!ts) return '';
+    var d = new Date(ts);
+    var now = new Date();
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var yesterday = new Date(today.getTime() - 86400000);
+    var msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+    if (msgDay.getTime() === today.getTime()) {
+        var h = d.getHours();
+        var m = d.getMinutes();
+        return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+    } else if (msgDay.getTime() === yesterday.getTime()) {
+        return '昨天';
+    } else if (msgDay.getTime() > today.getTime() - 604800000) {
+        var days = ['日', '一', '二', '三', '四', '五', '六'];
+        return '周' + days[d.getDay()];
+    } else {
+        return (d.getMonth() + 1) + '/' + d.getDate();
+    }
+}
+
+// 并行拉取每个会话的最近一条消息，填充预览和时间戳
+async function loadLastMessages() {
+    var fetches = conversations.map(function(c) {
+        var url;
+        if (c.type === 'user') {
+            url = '/history?peer_id=' + c.targetId + '&page=1&page_size=1';
+        } else if (c.type === 'group') {
+            url = '/history/group/' + c.targetId + '?page=1&page_size=1';
+        } else {
+            url = '/history/broadcast?page=1&page_size=1';
+        }
+        return api('GET', url).then(function(data) {
+            if (data.messages && data.messages.length > 0) {
+                var msg = data.messages[0];
+                lastMessages.set(c.key, msg);
+                if (msg.created_at) {
+                    lastTimestamps.set(c.key, new Date(msg.created_at));
+                }
+            }
+        }).catch(function() { /* 忽略单条失败 */ });
+    });
+    await Promise.all(fetches);
+}
+
+// ========================================
+// 侧边栏渲染
+// ========================================
 function renderSidebar() {
     var list = document.getElementById('sidebarList');
     var html = '';
 
-    if (sidebarMode === 'friends') {
-        var bcKey = 'broadcast';
-        var bcUnread = unreadCounts.get(bcKey) || 0;
-        var bcPreview = lastMessages.get(bcKey);
-        html += sidebarItemHTML(bcKey, '📢', '广播消息', bcPreview, bcUnread);
+    conversations.forEach(function(c) {
+        var unread = unreadCounts.get(c.key) || 0;
+        var preview = lastMessages.get(c.key);
+        var ts = lastTimestamps.get(c.key);
+        html += sidebarItemHTML(c.key, c.type, c.targetId, c.avatarChar, c.name, preview, unread, ts);
+    });
 
-        sidebarFriends.forEach(function(f) {
-            var key = 'user:' + f.friend_id;
-            var name = f.remark || f.nickname || f.username || ('用户' + f.friend_id);
-            var unread = unreadCounts.get(key) || 0;
-            var preview = lastMessages.get(key);
-            html += sidebarItemHTML(key, name.charAt(0), name, preview, unread);
-        });
-    } else {
-        sidebarGroups.forEach(function(g) {
-            var key = 'group:' + g.id;
-            var unread = unreadCounts.get(key) || 0;
-            var preview = lastMessages.get(key);
-            html += sidebarItemHTML(key, g.name.charAt(0), g.name, preview, unread);
-        });
-    }
-
-    list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#999;">暂无</div>';
+    list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#999;">暂无会话</div>';
 
     list.querySelectorAll('.sidebar-item').forEach(function(el) {
         el.addEventListener('click', function() {
@@ -142,21 +218,20 @@ function renderSidebar() {
     });
 }
 
-function sidebarItemHTML(key, avatarChar, name, previewMsg, unread) {
-    var parts = key.split(':');
-    var type = parts[0];
-    var target = parts[1] || 0;
+function sidebarItemHTML(key, type, targetId, avatarChar, name, previewMsg, unread, timestamp) {
     var activeClass = (key === activeTabKey) ? ' active' : '';
     var badgeHTML = unread > 0 ? '<span class="badge" style="display:inline-block">' + unread + '</span>' : '';
     var previewHTML = previewMsg
         ? (previewMsg.content || '[图片]').substring(0, 20)
         : '';
-    return '<div class="sidebar-item' + activeClass + '" data-key="' + key + '" data-type="' + type + '" data-target="' + target + '">' +
+    var timeHTML = timestamp ? '<span class="item-time">' + formatTime(timestamp) + '</span>' : '';
+    return '<div class="sidebar-item' + activeClass + '" data-key="' + key + '" data-type="' + type + '" data-target="' + targetId + '">' +
         '<div class="avatar">' + escapeHtml(avatarChar) + '</div>' +
         '<div class="item-info">' +
             '<div class="item-name">' + escapeHtml(name) + '</div>' +
             (previewHTML ? '<div class="item-preview">' + escapeHtml(previewHTML) + '</div>' : '') +
         '</div>' +
+        timeHTML +
         badgeHTML +
     '</div>';
 }
@@ -185,14 +260,27 @@ function updateSidebarPreview(key, msg) {
     el.textContent = (msg.content || '[图片]').substring(0, 20);
 }
 
+// 收到新消息时：更新时间戳、重排序、DOM 移位
 function resortSidebarItem(key) {
     var el = document.querySelector('.sidebar-item[data-key="' + key + '"]');
-    if (!el) return;
+    if (!el || key === 'broadcast') return;
+
+    sortConversations();
+
+    // 找到该 key 在排序后的新位置
+    var idx = -1;
+    for (var i = 0; i < conversations.length; i++) {
+        if (conversations[i].key === key) { idx = i; break; }
+    }
+    if (idx === -1) return;
+
     var list = document.getElementById('sidebarList');
-    var firstItem = list.querySelector('.sidebar-item');
-    if (key === 'broadcast') return;
-    if (firstItem && firstItem.dataset.key === 'broadcast') {
-        list.insertBefore(el, firstItem.nextSibling);
+    var nextKey = (idx + 1 < conversations.length) ? conversations[idx + 1].key : null;
+    var nextEl = nextKey ? list.querySelector('.sidebar-item[data-key="' + nextKey + '"]') : null;
+    if (nextEl) {
+        list.insertBefore(el, nextEl);
+    } else {
+        list.appendChild(el);
     }
 }
 
@@ -502,7 +590,9 @@ function saveGroupInfo(groupId) {
             var hSpan = tab.headerEl.querySelector('span');
             if (hSpan) hSpan.textContent = newName;
         }
-        // 更新侧边栏
+        // 同步更新侧边栏 conversations 和 sidebarGroups
+        var conv = conversations.find(function(c) { return c.key === key; });
+        if (conv) conv.name = newName;
         var g = sidebarGroups.find(function(g) { return g.id === groupId; });
         if (g) g.name = newName;
         renderSidebar();
@@ -685,7 +775,7 @@ function reloadGroupPanel() {
     if (currentGroupPanelKey) {
         loadGroupPanel(currentGroupPanelKey);
         // 同步刷新侧边栏群列表
-        loadGroups().then(function() { renderSidebar(); });
+        loadGroups().then(function() { buildConversations(); sortConversations(); renderSidebar(); });
     }
 }
 
@@ -706,8 +796,40 @@ onMessage = function(msg) {
     }
 
     lastMessages.set(key, msg);
+    lastTimestamps.set(key, new Date(msg.created_at || Date.now()));
     updateSidebarPreview(key, msg);
+
+    // 如果该会话不在 conversations 中但存在于已加载数据中，补充进去
+    if (!conversations.find(function(c) { return c.key === key; })) {
+        if (key === 'broadcast') {
+            // 广播已在 buildConversations 中添加，这里不应该走到
+        } else if (key.startsWith('group:')) {
+            var gid = parseInt(key.split(':')[1]);
+            var g = sidebarGroups.find(function(g) { return g.id === gid; });
+            if (g) {
+                conversations.push({ key: key, type: 'group', targetId: gid, name: g.name, avatarChar: g.name.charAt(0) });
+            }
+        } else if (key.startsWith('user:')) {
+            var uid = parseInt(key.split(':')[1]);
+            var f = sidebarFriends.find(function(f) { return f.friend_id === uid; });
+            if (f) {
+                var name = f.remark || f.nickname || f.username || ('用户' + uid);
+                conversations.push({ key: key, type: 'user', targetId: uid, name: name, avatarChar: name.charAt(0) });
+            }
+        }
+    }
+
     resortSidebarItem(key);
+    // 当有新会话加入 conversation 时，重渲染侧边栏以显示新增项
+    if (!document.querySelector('.sidebar-item[data-key="' + key + '"]')) {
+        renderSidebar();
+        // 重新绑定高亮
+        if (activeTabKey) {
+            document.querySelectorAll('.sidebar-item').forEach(function(el) {
+                el.classList.toggle('active', el.dataset.key === activeTabKey);
+            });
+        }
+    }
 
     if (chatTabs.has(key)) {
         var tab = chatTabs.get(key);
@@ -848,17 +970,15 @@ function escapeHtml(s) {
 
 async function init() {
     await Promise.all([loadFriends(), loadGroups()]);
+    buildConversations();
+    await loadLastMessages();
+    sortConversations();
     renderSidebar();
 
     if (pendingOpenKey) {
         var name = '';
-        if (pendingOpenType === 'user') {
-            var friend = sidebarFriends.find(function(f) { return f.friend_id === pendingOpenTarget; });
-            name = friend ? (friend.remark || '用户' + pendingOpenTarget) : ('用户' + pendingOpenTarget);
-        } else {
-            var group = sidebarGroups.find(function(g) { return g.id === pendingOpenTarget; });
-            name = group ? group.name : ('群组' + pendingOpenTarget);
-        }
+        var conv = conversations.find(function(c) { return c.key === pendingOpenKey; });
+        name = conv ? conv.name : ('用户' + pendingOpenTarget);
         openOrSwitchTab(pendingOpenKey, pendingOpenType, pendingOpenTarget, name);
     }
 }
