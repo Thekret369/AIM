@@ -111,3 +111,37 @@ function sendWS(msg) {
 function closeWS() {
     if (ws) ws.close();
 }
+
+// ========================================
+// 用户设置：主题、字体
+// ========================================
+
+function applyTheme(theme) {
+    if (theme === 'dark') {
+        document.body.classList.add('theme-dark');
+    } else {
+        document.body.classList.remove('theme-dark');
+    }
+}
+
+function applyFontSize(size) {
+    document.body.classList.remove('font-small', 'font-large');
+    if (size === 'small') document.body.classList.add('font-small');
+    else if (size === 'large') document.body.classList.add('font-large');
+}
+
+// 从服务端加载设置并应用（所有页面在初始化时调用）
+async function loadAndApplySettings() {
+    try {
+        const data = await api('GET', '/settings');
+        const s = data.settings;
+        applyTheme(s.theme || 'light');
+        applyFontSize(s.font_size || 'medium');
+        return s;
+    } catch (e) {
+        // 未配置或请求失败，使用默认值
+        applyTheme('light');
+        applyFontSize('medium');
+        return null;
+    }
+}
