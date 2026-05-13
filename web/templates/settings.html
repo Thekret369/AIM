@@ -132,6 +132,7 @@ async function onSettingChange() {
     // 即时生效
     applyTheme(settings.theme);
     applyFontSize(settings.font_size);
+    window.__soundEnabled = settings.sound_enabled !== false;
 
     try {
         await api('PUT', '/settings', settings);
