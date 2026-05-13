@@ -19,39 +19,51 @@
 </div>
 <div class="container">
     <div class="section">
-        <h2>个人资料</h2>
+        <h2 id="profileTitle">个人资料</h2>
         <div id="profileInfo">加载中...</div>
     </div>
-    <div class="section">
-        <h2>修改资料</h2>
-        <div class="form-group">
-            <label>昵称</label>
-            <input type="text" id="editNickname" placeholder="输入新昵称">
+    <!-- 仅本人可见的编辑区域 -->
+    <div id="editSection" style="display:none">
+        <div class="section">
+            <h2>修改资料</h2>
+            <div class="form-group">
+                <label>昵称</label>
+                <input type="text" id="editNickname" placeholder="输入新昵称">
+            </div>
+            <div class="form-group">
+                <label>头像 URL</label>
+                <input type="text" id="editAvatar" placeholder="输入头像图片链接">
+            </div>
+            <div class="form-group">
+                <label>个人简介</label>
+                <input type="text" id="editBio" placeholder="介绍一下自己...">
+            </div>
+            <button class="btn btn-primary" onclick="saveProfile()">保存修改</button>
+            <span class="msg" id="profileMsg"></span>
         </div>
-        <div class="form-group">
-            <label>头像 URL</label>
-            <input type="text" id="editAvatar" placeholder="输入头像图片链接">
+        <div class="section">
+            <h2>修改密码</h2>
+            <div class="form-group">
+                <label>旧密码</label>
+                <input type="password" id="oldPass" placeholder="输入旧密码">
+            </div>
+            <div class="form-group">
+                <label>新密码</label>
+                <input type="password" id="newPass" placeholder="输入新密码（至少6位）">
+            </div>
+            <button class="btn btn-primary" onclick="changePassword()">修改密码</button>
+            <span class="msg" id="pwdMsg"></span>
         </div>
-        <button class="btn btn-primary" onclick="saveProfile()">保存修改</button>
-        <span class="msg" id="profileMsg"></span>
-    </div>
-    <div class="section">
-        <h2>修改密码</h2>
-        <div class="form-group">
-            <label>旧密码</label>
-            <input type="password" id="oldPass" placeholder="输入旧密码">
-        </div>
-        <div class="form-group">
-            <label>新密码</label>
-            <input type="password" id="newPass" placeholder="输入新密码（至少6位）">
-        </div>
-        <button class="btn btn-primary" onclick="changePassword()">修改密码</button>
-        <span class="msg" id="pwdMsg"></span>
     </div>
 </div>
 <script src="/static/app.js"></script>
 <script>
 checkAuth(); // 无 token 则跳转登录页
+
+// 确定查看的是谁的个人资料
+var urlParams = new URLSearchParams(window.location.search);
+var viewUserId = parseInt(urlParams.get('user_id')) || getUserId();
+var isSelf = (viewUserId === getUserId());
 
 async function changePassword() {
     const oldPass = document.getElementById('oldPass').value;
@@ -73,18 +85,31 @@ async function changePassword() {
 
 async function loadProfile() {
     try {
-        const data = await api('GET', '/profile');
+        var url = isSelf ? '/profile' : '/profile/' + viewUserId;
+        const data = await api('GET', url);
+        // 以后端返回的 is_self 为准
+        isSelf = data.is_self !== false;
         const u = data.user;
+        document.getElementById('profileTitle').textContent = isSelf ? '个人资料' : (u.nickname || u.username) + ' 的资料';
         document.getElementById('profileInfo').innerHTML =
             '<div class="profile-card">' +
             '<p><strong>用户名：</strong>' + escapeHtml(u.username) + '</p>' +
             '<p><strong>昵称：</strong>' + escapeHtml(u.nickname || '未设置') + '</p>' +
             '<p><strong>头像：</strong>' + (u.avatar ? '<img src="' + escapeHtml(u.avatar) + '" class="avatar-preview" onerror="this.style.display=\'none\'">' : '未设置') + '</p>' +
+            '<p><strong>简介：</strong>' + escapeHtml(u.bio || '未设置') + '</p>' +
             '<p><strong>注册时间：</strong>' + u.created_at + '</p>' +
             '<p><strong>用户类型：</strong>' + (u.is_ai ? 'AI 助手' : '普通用户') + '</p>' +
             '</div>';
-        document.getElementById('editNickname').value = u.nickname || '';
-        document.getElementById('editAvatar').value = u.avatar || '';
+
+        // 仅本人可编辑
+        if (isSelf) {
+            document.getElementById('editSection').style.display = '';
+            document.getElementById('editNickname').value = u.nickname || '';
+            document.getElementById('editAvatar').value = u.avatar || '';
+            document.getElementById('editBio').value = u.bio || '';
+        } else {
+            document.getElementById('editSection').style.display = 'none';
+        }
     } catch(e) {
         document.getElementById('profileInfo').textContent = e.message;
     }
@@ -93,9 +118,10 @@ async function loadProfile() {
 async function saveProfile() {
     const nickname = document.getElementById('editNickname').value.trim();
     const avatar = document.getElementById('editAvatar').value.trim();
+    const bio = document.getElementById('editBio').value.trim();
     const msg = document.getElementById('profileMsg');
     try {
-        const data = await api('PUT', '/profile', { nickname, avatar });
+        const data = await api('PUT', '/profile', { nickname, avatar, bio });
         setUserNickname(data.user.nickname || data.user.username);
         msg.textContent = '保存成功';
         msg.className = 'msg success';
@@ -109,7 +135,7 @@ async function saveProfile() {
 
 function escapeHtml(s) {
     var d = document.createElement('div');
-    d.textContent = s;
+    d.textContent = s || '';
     return d.innerHTML;
 }
 

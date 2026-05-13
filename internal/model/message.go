@@ -19,16 +19,18 @@ const (
 // 广播：ToUserID 和 GroupID 均为空
 // 文件的真实存储路径在 Content 中，由 pkg/storage 包管理
 type Message struct {
-	ID        uint        `gorm:"primaryKey" json:"id"`
-	Type      MessageType `gorm:"size:16;not null;default:'text'" json:"type"`
-	FromUserID uint       `gorm:"index;not null" json:"from_user_id"`
-	FromUser   User       `gorm:"foreignKey:FromUserID" json:"from_user,omitempty"`
-	ToUserID   *uint      `gorm:"index" json:"to_user_id,omitempty"` // 单聊接收者
-	GroupID    *uint      `gorm:"index" json:"group_id,omitempty"`    // 群聊 ID
-	Content    string     `gorm:"type:text" json:"content"`            // 文本内容或文件 URL
-	FileName   string     `gorm:"size:256" json:"file_name,omitempty"` // 文件/图片/音频的原文件名
-	FileSize   int64      `json:"file_size,omitempty"`                 // 文件大小(字节)
-	CreatedAt  time.Time  `json:"created_at"`
+	ID         uint        `gorm:"primaryKey" json:"id"`
+	Type       MessageType `gorm:"size:16;not null;default:'text'" json:"type"`
+	FromUserID uint        `gorm:"index;not null" json:"from_user_id"`
+	FromUser   User        `gorm:"foreignKey:FromUserID" json:"from_user,omitempty"`
+	ToUserID   *uint       `gorm:"index" json:"to_user_id,omitempty"` // 单聊接收者
+	GroupID    *uint       `gorm:"index" json:"group_id,omitempty"`    // 群聊 ID
+	Content    string      `gorm:"type:text" json:"content"`            // 文本内容或文件 URL
+	FileName   string      `gorm:"size:256" json:"file_name,omitempty"` // 文件/图片/音频的原文件名
+	FileSize   int64       `json:"file_size,omitempty"`                 // 文件大小(字节)
+	// Mentions 被 @ 的用户 ID 列表，JSON 数组如 "[1,3,5]"
+	Mentions   string    `gorm:"size:512" json:"mentions,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // IsToUser 是否为发给特定用户的单聊消息
