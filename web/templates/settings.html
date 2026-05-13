@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIM — 设置</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="nav">
+    <span>AIM</span>
+    <div>
+        <span id="navUser"></span>
+        <a href="/contacts">联系人</a>
+        <a href="/chat">聊天</a>
+        <a href="/groups">群组</a>
+        <a href="/profile">个人信息</a>
+        <a href="/settings">设置</a>
+        <a href="javascript:logout()">退出</a>
+    </div>
+</div>
+
+<div class="settings-layout">
+    <h2 style="margin-bottom:18px;">设置</h2>
+
+    <!-- 外观 -->
+    <div class="settings-card">
+        <h3>外观</h3>
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">主题</div>
+                <div class="setting-desc">切换深色/浅色模式</div>
+            </div>
+            <select class="setting-select" id="themeSelect" onchange="onSettingChange()">
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+            </select>
+        </div>
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">字体大小</div>
+                <div class="setting-desc">调整页面字体尺寸</div>
+            </div>
+            <select class="setting-select" id="fontSizeSelect" onchange="onSettingChange()">
+                <option value="small">小</option>
+                <option value="medium">中</option>
+                <option value="large">大</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 聊天偏好 -->
+    <div class="settings-card">
+        <h3>聊天</h3>
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">Enter 发送消息</div>
+                <div class="setting-desc">开启后按 Enter 直接发送，关闭则 Enter 换行</div>
+            </div>
+            <label class="toggle-switch">
+                <input type="checkbox" id="enterToSend" onchange="onSettingChange()" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">消息提示音</div>
+                <div class="setting-desc">收到新消息时播放提示音</div>
+            </div>
+            <label class="toggle-switch">
+                <input type="checkbox" id="soundEnabled" onchange="onSettingChange()" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- 账号安全 -->
+    <div class="settings-card">
+        <h3>账号安全</h3>
+        <div class="form-group">
+            <label>旧密码</label>
+            <input type="password" id="oldPass" placeholder="输入旧密码">
+        </div>
+        <div class="form-group">
+            <label>新密码</label>
+            <input type="password" id="newPass" placeholder="输入新密码（至少6位）">
+        </div>
+        <button class="btn btn-primary" onclick="changePassword()">修改密码</button>
+        <span class="msg" id="pwdMsg"></span>
+    </div>
+
+    <!-- 关于 -->
+    <div class="settings-card about-info">
+        <h3>关于 AIM</h3>
+        <p>版本：1.0.0</p>
+        <p>技术栈：Go + Gin + WebSocket + SQLite</p>
+        <p>一个轻量级即时通讯系统</p>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+let settings = {};
+
+// 从服务端加载设置
+async function loadSettings() {
+    try {
+        const data = await api('GET', '/settings');
+        settings = data.settings;
+    } catch (e) {
+        // 使用默认值
+        settings = { theme: 'light', font_size: 'medium', enter_to_send: true, sound_enabled: true };
+    }
+    renderSettings();
+}
+
+// 将当前设置反映到表单控件
+function renderSettings() {
+    document.getElementById('themeSelect').value = settings.theme || 'light';
+    document.getElementById('fontSizeSelect').value = settings.font_size || 'medium';
+    document.getElementById('enterToSend').checked = settings.enter_to_send !== false;
+    document.getElementById('soundEnabled').checked = settings.sound_enabled !== false;
+}
+
+// 表单变化时即时收集并保存
+async function onSettingChange() {
+    settings.theme = document.getElementById('themeSelect').value;
+    settings.font_size = document.getElementById('fontSizeSelect').value;
+    settings.enter_to_send = document.getElementById('enterToSend').checked;
+    settings.sound_enabled = document.getElementById('soundEnabled').checked;
+
+    // 即时生效
+    applyTheme(settings.theme);
+    applyFontSize(settings.font_size);
+
+    try {
+        await api('PUT', '/settings', settings);
+    } catch (e) {
+        console.error('设置保存失败:', e);
+    }
+}
+
+async function changePassword() {
+    const oldPass = document.getElementById('oldPass').value;
+    const newPass = document.getElementById('newPass').value;
+    const msg = document.getElementById('pwdMsg');
+    if (!oldPass || !newPass) { msg.textContent = '请填写完整'; msg.className = 'msg error'; return; }
+    if (newPass.length < 6) { msg.textContent = '新密码至少6位'; msg.className = 'msg error'; return; }
+    try {
+        await api('PUT', '/profile/password', { old_password: oldPass, new_password: newPass });
+        msg.textContent = '密码已修改';
+        msg.className = 'msg success';
+        document.getElementById('oldPass').value = '';
+        document.getElementById('newPass').value = '';
+    } catch(e) {
+        msg.textContent = e.message;
+        msg.className = 'msg error';
+    }
+}
+
+function loadNavUser() {
+    document.getElementById('navUser').textContent = getUserNickname();
+}
+
+loadNavUser();
+loadSettings();
+</script>
+</body>
+</html>
