@@ -66,6 +66,8 @@ body {
 .nav { background: var(--nav-bg); color: var(--nav-text); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
 .nav a { color: var(--nav-text); text-decoration: none; margin-left: 16px; }
 .nav a:hover { text-decoration: underline; }
+.nav .nav-user-link { color: var(--nav-text); text-decoration: none; margin-left: 0; cursor: pointer; }
+.nav .nav-user-link:hover { text-decoration: underline; }
 .nav .user-info { display: flex; align-items: center; gap: 8px; }
 
 /* 登录页 */

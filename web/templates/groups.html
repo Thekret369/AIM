@@ -10,13 +10,11 @@
 <div class="nav">
     <span>AIM</span>
     <div>
-        <span id="navUser"></span>
+        <a href="/profile" id="navUser" class="nav-user-link"></a>
         <a href="/contacts">联系人</a>
         <a href="/chat">聊天</a>
         <a href="/groups">群组</a>
-        <a href="/profile">个人信息</a>
         <a href="/settings">设置</a>
-        <a href="javascript:logout()">退出</a>
     </div>
 </div>
 <div class="container">
@@ -67,7 +65,9 @@
 
 <script src="/static/app.js"></script>
 <script>
-document.getElementById('navUser').textContent = getUserNickname();
+var navUserEl = document.getElementById('navUser');
+navUserEl.textContent = getUserNickname();
+navUserEl.href = '/profile';
 let currentGroupId = 0;
 
 async function loadGroups() {
