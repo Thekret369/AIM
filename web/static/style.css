@@ -528,3 +528,37 @@ body {
 	font-size: 13px;
 	color: var(--text-secondary);
 }
+
+/* @ 提及下拉 */
+.mention-dropdown {
+	position: fixed;
+	z-index: 9999;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+	max-height: 200px;
+	overflow-y: auto;
+}
+.mention-dropdown.hidden { display: none; }
+.mention-item {
+	display: flex; align-items: center; gap: 8px;
+	padding: 8px 12px; cursor: pointer;
+	font-size: 13px; color: var(--text);
+}
+.mention-item:hover { background: var(--hover); }
+.mention-avatar {
+	width: 26px; height: 26px; border-radius: 50%;
+	background: var(--primary); color: #fff;
+	display: flex; align-items: center; justify-content: center;
+	font-size: 12px; font-weight: 600; flex-shrink: 0;
+}
+
+/* 群编辑标签 */
+.gp-label {
+	display: block; font-size: 12px; color: var(--text-muted);
+	margin-top: 10px; margin-bottom: 4px;
+}
+
+/* 公告历史项 */
+.announce-item:last-child { border-bottom: none !important; }

@@ -94,8 +94,12 @@ function connectWS() {
     ws.onmessage = function(evt) {
         try {
             const msg = JSON.parse(evt.data);
-            // 收到他人消息播放提示音（所有页面生效，不依赖聊天页 onMessage）
-            if (msg.from_user_id !== getUserId()) playMessageSound();
+            if (msg.from_user_id !== getUserId()) {
+                // 免打扰群中除非被 @ 否则抑制提示音
+                if (!window.__suppressSound || !window.__suppressSound(msg)) {
+                    playMessageSound();
+                }
+            }
             if (onMessage) onMessage(msg);
         } catch(e) {
             console.error('[ws] 解析失败:', e);

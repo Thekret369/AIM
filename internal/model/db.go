@@ -28,6 +28,7 @@ func InitDB(dsn string) error {
 		&ContactGroup{},
 		&Group{},
 		&GroupMember{},
+		&Announcement{},
 	)
 	if err != nil {
 		return err
