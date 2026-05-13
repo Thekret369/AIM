@@ -54,6 +54,8 @@
 
 <script src="/static/app.js"></script>
 <script>
+checkAuth(); // 无 token 则跳转登录页
+
 var navUserEl = document.getElementById('navUser');
 navUserEl.textContent = getUserNickname();
 navUserEl.href = '/profile';

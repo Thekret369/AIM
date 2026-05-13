@@ -43,7 +43,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user": user})
 }
 
-// Login 用户登录
+// Login 用户登录，返回 JWT token，前端自行存储至 sessionStorage
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -57,15 +57,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// 种 Cookie，解决浏览器页面导航不携带 Authorization header 的问题
-	c.SetCookie("aim_token", token, 3600*24*7, "/", "", false, true)
-
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": user})
 }
 
-// Logout 退出登录，清除 Cookie
+// Logout 退出登录
 func (h *AuthHandler) Logout(c *gin.Context) {
-	c.SetCookie("aim_token", "", -1, "/", "", false, true)
 	c.JSON(http.StatusOK, gin.H{"message": "已退出"})
 }
 

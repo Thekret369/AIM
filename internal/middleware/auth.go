@@ -66,14 +66,11 @@ func ParseToken(tokenStr string, secret string) (*Claims, error) {
 	return claims, nil
 }
 
-// extractToken 从 Authorization Header 或 Cookie 提取 token
+// extractToken 从 Authorization Header 提取 token
 func extractToken(c *gin.Context) string {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
 		return strings.TrimPrefix(authHeader, "Bearer ")
-	}
-	if cookie, err := c.Cookie("aim_token"); err == nil {
-		return cookie
 	}
 	return ""
 }
