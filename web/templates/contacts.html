@@ -58,6 +58,8 @@
 
 <script src="/static/app.js"></script>
 <script>
+checkAuth(); // 无 token 则跳转登录页
+
 function loadNavUser() {
     var el = document.getElementById('navUser');
     el.textContent = getUserNickname();

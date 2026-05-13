@@ -5,43 +5,51 @@
 // ========================================
 
 function getToken() {
-    return localStorage.getItem('aim_token');
+    return sessionStorage.getItem('aim_token');
 }
 
 function setToken(t) {
-    localStorage.setItem('aim_token', t);
+    sessionStorage.setItem('aim_token', t);
 }
 
 function getUsername() {
-    return localStorage.getItem('aim_username');
+    return sessionStorage.getItem('aim_username');
 }
 
 function setUsername(u) {
-    localStorage.setItem('aim_username', u);
+    sessionStorage.setItem('aim_username', u);
 }
 
 function getUserId() {
-    return parseInt(localStorage.getItem('aim_user_id') || '0');
+    return parseInt(sessionStorage.getItem('aim_user_id') || '0');
 }
 
 function setUserId(id) {
-    localStorage.setItem('aim_user_id', id);
+    sessionStorage.setItem('aim_user_id', id);
 }
 
 function getUserNickname() {
-    return localStorage.getItem('aim_nickname') || getUsername();
+    return sessionStorage.getItem('aim_nickname') || getUsername();
 }
 
 function setUserNickname(n) {
-    localStorage.setItem('aim_nickname', n);
+    sessionStorage.setItem('aim_nickname', n);
+}
+
+function checkAuth() {
+    if (!getToken()) {
+        window.location.href = '/login';
+        return false;
+    }
+    return true;
 }
 
 async function logout() {
     try { await api('POST', '/logout', {}); } catch(e) {}
-    localStorage.removeItem('aim_token');
-    localStorage.removeItem('aim_username');
-    localStorage.removeItem('aim_user_id');
-    localStorage.removeItem('aim_nickname');
+    sessionStorage.removeItem('aim_token');
+    sessionStorage.removeItem('aim_username');
+    sessionStorage.removeItem('aim_user_id');
+    sessionStorage.removeItem('aim_nickname');
     window.location.href = '/login';
 }
 
