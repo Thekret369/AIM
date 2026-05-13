@@ -86,10 +86,10 @@ func main() {
 		api.POST("/logout", authH.Logout)
 	}
 
-	// WebSocket — 独立于 /api 之外，浏览器 WS 不支持 Header 认证，由 Handler 从 ?token= 自验 JWT
+	// WebSocket — 浏览器 WS 不支持 Header 认证，由 Handler 从 ?token= 自验 JWT
 	r.GET("/ws", chatH.HandleWS)
 
-	// 认证 API（需 JWT）
+	// 认证 API（需 JWT Authorization Header）
 	auth := r.Group("/api")
 	auth.Use(middleware.AuthRequired(cfg.JWT.Secret))
 	{
@@ -137,20 +137,20 @@ func main() {
 		auth.GET("/history/broadcast", chatH.GetBroadcastHistory)
 	}
 
-	// 需要认证的页面路由
-	r.GET("/contacts", middleware.AuthRequired(cfg.JWT.Secret), func(c *gin.Context) {
+	// 页面路由（无服务端鉴权，由前端 JS 检查 sessionStorage token）
+	r.GET("/contacts", func(c *gin.Context) {
 		c.HTML(200, "contacts.html", nil)
 	})
-	r.GET("/chat", middleware.AuthRequired(cfg.JWT.Secret), func(c *gin.Context) {
+	r.GET("/chat", func(c *gin.Context) {
 		c.HTML(200, "chat.html", nil)
 	})
-	r.GET("/groups", middleware.AuthRequired(cfg.JWT.Secret), func(c *gin.Context) {
+	r.GET("/groups", func(c *gin.Context) {
 		c.HTML(200, "groups.html", nil)
 	})
-	r.GET("/profile", middleware.AuthRequired(cfg.JWT.Secret), func(c *gin.Context) {
+	r.GET("/profile", func(c *gin.Context) {
 		c.HTML(200, "profile.html", nil)
 	})
-	r.GET("/settings", middleware.AuthRequired(cfg.JWT.Secret), func(c *gin.Context) {
+	r.GET("/settings", func(c *gin.Context) {
 		c.HTML(200, "settings.html", nil)
 	})
 

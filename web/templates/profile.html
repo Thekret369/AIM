@@ -51,6 +51,8 @@
 </div>
 <script src="/static/app.js"></script>
 <script>
+checkAuth(); // 无 token 则跳转登录页
+
 async function changePassword() {
     const oldPass = document.getElementById('oldPass').value;
     const newPass = document.getElementById('newPass').value;
