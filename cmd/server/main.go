@@ -120,10 +120,14 @@ func main() {
 		auth.PUT("/groups/:id/admin/:user_id", groupH.SetAdmin)
 		auth.POST("/groups/:id/mute", groupH.MuteMember)
 		auth.POST("/groups/:id/unmute", groupH.UnmuteMember)
+		auth.POST("/groups/:id/dnd", groupH.ToggleDND)
 		auth.GET("/groups/:id/members", groupH.GetGroupMembers)
+		auth.POST("/groups/:id/announcements", groupH.CreateAnnouncement)
+		auth.GET("/groups/:id/announcements", groupH.GetAnnouncements)
 
 		// 个人信息
 		auth.GET("/profile", authH.GetProfile)
+		auth.GET("/profile/:id", authH.GetUserProfile)
 		auth.PUT("/profile", authH.UpdateProfile)
 		auth.PUT("/profile/password", authH.ChangePassword)
 

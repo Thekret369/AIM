@@ -58,6 +58,7 @@ type User struct {
 	Password  string    `gorm:"size:256;not null" json:"-"` // bcrypt 哈希，json 不输出
 	Nickname  string    `gorm:"size:128" json:"nickname"`
 	Avatar    string    `gorm:"size:512" json:"avatar"`
+		Bio       string    `gorm:"size:512" json:"bio"` // 个人简介
 
 	// IsAI 标记是否为 AI 用户，true 时不可通过普通注册创建
 	IsAI bool `gorm:"default:false" json:"is_ai"`

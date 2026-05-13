@@ -18,14 +18,15 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
 	var req struct {
-		Name string `json:"name" binding:"required"`
+		Name        string `json:"name" binding:"required"`
+		Description string `json:"description"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
 
-	group, err := h.Svc.CreateGroup(req.Name, userID)
+	group, err := h.Svc.CreateGroup(req.Name, req.Description, userID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -123,8 +124,8 @@ func (h *GroupHandler) MuteMember(c *gin.Context) {
 	}
 
 	var req struct {
-		UserID    uint `json:"user_id" binding:"required"`
-		Minutes   int  `json:"minutes" binding:"required,min=1"`
+		UserID  uint `json:"user_id" binding:"required"`
+		Minutes int  `json:"minutes" binding:"required,min=1"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
@@ -169,18 +170,21 @@ func (h *GroupHandler) GetGroupDetail(c *gin.Context) {
 	}
 	myRole := ""
 	isMuted := false
+	dnd := false
 	if member != nil {
 		myRole = string(member.Role)
 		isMuted = member.IsMuted()
+		dnd = member.DND
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"group":    group,
 		"my_role":  myRole,
 		"is_muted": isMuted,
+		"dnd":      dnd,
 	})
 }
 
-// UpdateGroup 更新群资料（名称、头像、公告）
+// UpdateGroup 更新群资料（名称、头像、简介、公告）
 func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -189,22 +193,23 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name     string `json:"name"`
-		Avatar   string `json:"avatar"`
-		Announce string `json:"announce"`
+		Name        string `json:"name"`
+		Avatar      string `json:"avatar"`
+		Description string `json:"description"`
+		Announce    string `json:"announce"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
-	if err := h.Svc.UpdateGroup(uint(groupID), userID, req.Name, req.Avatar, req.Announce); err != nil {
+	if err := h.Svc.UpdateGroup(uint(groupID), userID, req.Name, req.Avatar, req.Description, req.Announce); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"msg": "已更新"})
 }
 
-// SetAdmin 切换管理员身份（设管理 / 取消管理）
+// SetAdmin 切换管理员身份
 func (h *GroupHandler) SetAdmin(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -246,7 +251,7 @@ func (h *GroupHandler) UnmuteMember(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"msg": "已解除禁言"})
 }
 
-// AddMember 添加成员到群组（群主/管理员操作）
+// AddMember 添加成员到群组
 func (h *GroupHandler) AddMember(c *gin.Context) {
 	operatorID := c.GetUint("user_id")
 	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -278,4 +283,58 @@ func (h *GroupHandler) GetUserGroups(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"groups": groups})
+}
+
+// ToggleDND 切换群消息免打扰
+func (h *GroupHandler) ToggleDND(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组 ID"})
+		return
+	}
+	dnd, err := h.Svc.ToggleDND(uint(groupID), userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"dnd": dnd})
+}
+
+// CreateAnnouncement 发布群公告（保留历史记录）
+func (h *GroupHandler) CreateAnnouncement(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组 ID"})
+		return
+	}
+	var req struct {
+		Content string `json:"content" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	ann, err := h.Svc.CreateAnnouncement(uint(groupID), userID, req.Content)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"announcement": ann})
+}
+
+// GetAnnouncements 获取群公告列表（含历史）
+func (h *GroupHandler) GetAnnouncements(c *gin.Context) {
+	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组 ID"})
+		return
+	}
+	anns, err := h.Svc.GetAnnouncements(uint(groupID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"announcements": anns})
 }

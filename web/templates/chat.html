@@ -35,7 +35,10 @@
             <div class="group-panel hidden" id="groupPanel">
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #e0e4e8;background:#f9f9f9;flex-shrink:0">
                     <span style="font-weight:500" id="gpTitle">群详情</span>
-                    <span style="cursor:pointer;font-size:18px;color:#999;line-height:1" onclick="closeGroupPanel()">&times;</span>
+                    <span style="display:flex;align-items:center;gap:8px">
+                        <button class="btn btn-sm" id="gpDndBtn" onclick="toggleGroupDND()" style="font-size:11px" title="免打扰">🔔</button>
+                        <span style="cursor:pointer;font-size:18px;color:#999;line-height:1" onclick="closeGroupPanel()">&times;</span>
+                    </span>
                 </div>
                 <div class="group-panel-tabs">
                     <button class="gp-tab-btn active" data-gp-tab="info" onclick="switchGroupPanelTab('info')">群资料</button>
@@ -48,9 +51,12 @@
     </div>
 </div>
 
+<!-- @ 提及成员选择弹层 -->
+<div class="mention-dropdown hidden" id="mentionDropdown"></div>
+
 <script src="/static/app.js"></script>
 <script>
-checkAuth(); // 无 token 则跳转登录页
+checkAuth();
 
 var navUserEl = document.getElementById('navUser');
 navUserEl.textContent = getUserNickname();
@@ -61,17 +67,25 @@ navUserEl.href = '/profile';
 // ========================================
 let sidebarFriends = [];
 let sidebarGroups = [];
-let conversations = [];       // 统一会话列表 { key, type, targetId, name, avatarChar }
-let lastTimestamps = new Map(); // key → Date，用于排序
+let conversations = [];
+let lastTimestamps = new Map();
 let chatTabs = new Map();
 let activeTabKey = null;
 let unreadCounts = new Map();
-let lastMessages = new Map(); // key → 最新消息对象（含 content 用于预览）
+let lastMessages = new Map();
+
+// 群相关缓存
+let groupMembersMap = new Map();   // groupId → members[]
+let groupDNDMap = new Map();        // groupId → bool
 
 // 群详情面板状态
 let currentGroupPanelKey = null;
 let groupPanelData = null;
 let groupPanelActiveTab = 'info';
+
+// @ 提及状态
+let mentionActiveInput = null;
+let mentionActiveKey = null;
 
 // ========================================
 // 数据加载
@@ -90,15 +104,21 @@ async function loadGroups() {
     } catch(e) { sidebarGroups = []; }
 }
 
+// 预加载所有群的 DND 状态和成员列表
+async function loadGroupMetadata() {
+    var promises = sidebarGroups.map(function(g) {
+        return api('GET', '/groups/' + g.id).then(function(data) {
+            groupDNDMap.set(g.id, data.dnd || false);
+        }).catch(function() {});
+    });
+    await Promise.all(promises);
+}
+
 // ========================================
 // 统一会话列表构建 & 排序
 // ========================================
-
-// 合并广播 + 好友 + 群组为统一会话数组
 function buildConversations() {
     conversations = [];
-
-    // 广播始终在 conversations[0]
     conversations.push({
         key: 'broadcast',
         type: 'broadcast',
@@ -106,37 +126,27 @@ function buildConversations() {
         name: '广播消息',
         avatarChar: '📢'
     });
-
     sidebarFriends.forEach(function(f) {
         var name = f.remark || f.nickname || f.username || ('用户' + f.friend_id);
         conversations.push({
-            key: 'user:' + f.friend_id,
-            type: 'user',
-            targetId: f.friend_id,
-            name: name,
-            avatarChar: name.charAt(0)
+            key: 'user:' + f.friend_id, type: 'user', targetId: f.friend_id,
+            name: name, avatarChar: name.charAt(0)
         });
     });
-
     sidebarGroups.forEach(function(g) {
         conversations.push({
-            key: 'group:' + g.id,
-            type: 'group',
-            targetId: g.id,
-            name: g.name,
-            avatarChar: g.name.charAt(0)
+            key: 'group:' + g.id, type: 'group', targetId: g.id,
+            name: g.name, avatarChar: g.name.charAt(0)
         });
     });
 }
 
-// 按最后消息时间降序，广播始终置顶
 function sortConversations() {
     conversations.sort(function(a, b) {
         if (a.key === 'broadcast') return -1;
         if (b.key === 'broadcast') return 1;
         var ta = lastTimestamps.get(a.key);
         var tb = lastTimestamps.get(b.key);
-        // 有时间戳的排前面
         if (ta && !tb) return -1;
         if (!ta && tb) return 1;
         if (!ta && !tb) return 0;
@@ -144,7 +154,6 @@ function sortConversations() {
     });
 }
 
-// 格式化时间戳为显示文本
 function formatTime(ts) {
     if (!ts) return '';
     var d = new Date(ts);
@@ -152,10 +161,8 @@ function formatTime(ts) {
     var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     var yesterday = new Date(today.getTime() - 86400000);
     var msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
     if (msgDay.getTime() === today.getTime()) {
-        var h = d.getHours();
-        var m = d.getMinutes();
+        var h = d.getHours(), m = d.getMinutes();
         return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
     } else if (msgDay.getTime() === yesterday.getTime()) {
         return '昨天';
@@ -167,26 +174,19 @@ function formatTime(ts) {
     }
 }
 
-// 并行拉取每个会话的最近一条消息，填充预览和时间戳
 async function loadLastMessages() {
     var fetches = conversations.map(function(c) {
         var url;
-        if (c.type === 'user') {
-            url = '/history?peer_id=' + c.targetId + '&page=1&page_size=1';
-        } else if (c.type === 'group') {
-            url = '/history/group/' + c.targetId + '?page=1&page_size=1';
-        } else {
-            url = '/history/broadcast?page=1&page_size=1';
-        }
+        if (c.type === 'user') url = '/history?peer_id=' + c.targetId + '&page=1&page_size=1';
+        else if (c.type === 'group') url = '/history/group/' + c.targetId + '?page=1&page_size=1';
+        else url = '/history/broadcast?page=1&page_size=1';
         return api('GET', url).then(function(data) {
             if (data.messages && data.messages.length > 0) {
                 var msg = data.messages[0];
                 lastMessages.set(c.key, msg);
-                if (msg.created_at) {
-                    lastTimestamps.set(c.key, new Date(msg.created_at));
-                }
+                if (msg.created_at) lastTimestamps.set(c.key, new Date(msg.created_at));
             }
-        }).catch(function() { /* 忽略单条失败 */ });
+        }).catch(function() {});
     });
     await Promise.all(fetches);
 }
@@ -197,20 +197,18 @@ async function loadLastMessages() {
 function renderSidebar() {
     var list = document.getElementById('sidebarList');
     var html = '';
-
     conversations.forEach(function(c) {
         var unread = unreadCounts.get(c.key) || 0;
         var preview = lastMessages.get(c.key);
         var ts = lastTimestamps.get(c.key);
-        html += sidebarItemHTML(c.key, c.type, c.targetId, c.avatarChar, c.name, preview, unread, ts);
+        var dnd = false;
+        if (c.type === 'group') dnd = groupDNDMap.get(c.targetId) || false;
+        html += sidebarItemHTML(c.key, c.type, c.targetId, c.avatarChar, c.name, preview, unread, ts, dnd);
     });
-
     list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#999;">暂无会话</div>';
-
     list.querySelectorAll('.sidebar-item').forEach(function(el) {
         el.addEventListener('click', function() {
-            var key = this.dataset.key;
-            var type = this.dataset.type;
+            var key = this.dataset.key, type = this.dataset.type;
             var targetId = parseInt(this.dataset.target) || 0;
             var name = this.querySelector('.item-name').textContent;
             openOrSwitchTab(key, type, targetId, name);
@@ -218,21 +216,18 @@ function renderSidebar() {
     });
 }
 
-function sidebarItemHTML(key, type, targetId, avatarChar, name, previewMsg, unread, timestamp) {
+function sidebarItemHTML(key, type, targetId, avatarChar, name, previewMsg, unread, timestamp, dnd) {
     var activeClass = (key === activeTabKey) ? ' active' : '';
     var badgeHTML = unread > 0 ? '<span class="badge" style="display:inline-block">' + unread + '</span>' : '';
-    var previewHTML = previewMsg
-        ? (previewMsg.content || '[图片]').substring(0, 20)
-        : '';
+    var previewHTML = previewMsg ? (previewMsg.content || '[图片]').substring(0, 20) : '';
     var timeHTML = timestamp ? '<span class="item-time">' + formatTime(timestamp) + '</span>' : '';
+    var dndIcon = dnd ? '<span class="item-dnd" style="font-size:10px;margin-right:2px">🔕</span>' : '';
     return '<div class="sidebar-item' + activeClass + '" data-key="' + key + '" data-type="' + type + '" data-target="' + targetId + '">' +
         '<div class="avatar">' + escapeHtml(avatarChar) + '</div>' +
         '<div class="item-info">' +
-            '<div class="item-name">' + escapeHtml(name) + '</div>' +
+            '<div class="item-name">' + dndIcon + escapeHtml(name) + '</div>' +
             (previewHTML ? '<div class="item-preview">' + escapeHtml(previewHTML) + '</div>' : '') +
-        '</div>' +
-        timeHTML +
-        badgeHTML +
+        '</div>' + timeHTML + badgeHTML +
     '</div>';
 }
 
@@ -242,16 +237,9 @@ function updateSidebarBadge(key) {
     var badgeEl = el.querySelector('.badge');
     var count = unreadCounts.get(key) || 0;
     if (count > 0) {
-        if (!badgeEl) {
-            badgeEl = document.createElement('span');
-            badgeEl.className = 'badge';
-            el.appendChild(badgeEl);
-        }
-        badgeEl.textContent = count;
-        badgeEl.style.display = 'inline-block';
-    } else if (badgeEl) {
-        badgeEl.style.display = 'none';
-    }
+        if (!badgeEl) { badgeEl = document.createElement('span'); badgeEl.className = 'badge'; el.appendChild(badgeEl); }
+        badgeEl.textContent = count; badgeEl.style.display = 'inline-block';
+    } else if (badgeEl) { badgeEl.style.display = 'none'; }
 }
 
 function updateSidebarPreview(key, msg) {
@@ -260,65 +248,39 @@ function updateSidebarPreview(key, msg) {
     el.textContent = (msg.content || '[图片]').substring(0, 20);
 }
 
-// 收到新消息时：更新时间戳、重排序、DOM 移位
 function resortSidebarItem(key) {
     var el = document.querySelector('.sidebar-item[data-key="' + key + '"]');
     if (!el || key === 'broadcast') return;
-
     sortConversations();
-
-    // 找到该 key 在排序后的新位置
     var idx = -1;
-    for (var i = 0; i < conversations.length; i++) {
-        if (conversations[i].key === key) { idx = i; break; }
-    }
+    for (var i = 0; i < conversations.length; i++) { if (conversations[i].key === key) { idx = i; break; } }
     if (idx === -1) return;
-
     var list = document.getElementById('sidebarList');
     var nextKey = (idx + 1 < conversations.length) ? conversations[idx + 1].key : null;
     var nextEl = nextKey ? list.querySelector('.sidebar-item[data-key="' + nextKey + '"]') : null;
-    if (nextEl) {
-        list.insertBefore(el, nextEl);
-    } else {
-        list.appendChild(el);
-    }
+    if (nextEl) list.insertBefore(el, nextEl); else list.appendChild(el);
 }
 
 // ========================================
 // 标签管理
 // ========================================
 function openOrSwitchTab(key, type, targetId, name) {
-    if (chatTabs.has(key)) {
-        switchToTab(key);
-    } else {
-        createTab(key, type, targetId, name);
-        switchToTab(key);
-        loadHistory(key, 1);
-    }
+    if (chatTabs.has(key)) { switchToTab(key); }
+    else { createTab(key, type, targetId, name); switchToTab(key); loadHistory(key, 1); }
     unreadCounts.set(key, 0);
-    updateSidebarBadge(key);
-    updateTabBadge(key);
-    renderSidebar();
+    updateSidebarBadge(key); updateTabBadge(key); renderSidebar();
 }
 
 function createTab(key, type, targetId, name) {
-    // 标签头部
     var tabEl = document.createElement('span');
     tabEl.className = 'chat-tab';
     tabEl.innerHTML = '<span class="tab-name">' + escapeHtml(name) + '</span>' +
         '<span class="tab-badge" style="display:none"></span>' +
         '<span class="tab-close">&times;</span>';
-    tabEl.querySelector('.tab-name').addEventListener('click', function(e) {
-        e.stopPropagation();
-        switchToTab(key);
-    });
-    tabEl.querySelector('.tab-close').addEventListener('click', function(e) {
-        e.stopPropagation();
-        closeTab(key);
-    });
+    tabEl.querySelector('.tab-name').addEventListener('click', function(e) { e.stopPropagation(); switchToTab(key); });
+    tabEl.querySelector('.tab-close').addEventListener('click', function(e) { e.stopPropagation(); closeTab(key); });
     document.getElementById('tabBar').appendChild(tabEl);
 
-    // 面板 — 群聊 header 带"群详情"按钮
     var panelEl = document.createElement('div');
     panelEl.className = 'tab-panel hidden';
     if (type === 'group') {
@@ -329,7 +291,7 @@ function createTab(key, type, targetId, name) {
             '</div>' +
             '<div class="chat-messages"></div>' +
             '<div class="chat-input">' +
-                '<input type="text" placeholder="输入消息...">' +
+                '<input type="text" placeholder="输入消息，@ 提及成员...">' +
                 '<button>发送</button>' +
             '</div>';
     } else {
@@ -347,77 +309,62 @@ function createTab(key, type, targetId, name) {
         if (e.key === 'Enter') sendMessage(key);
     });
     btnEl.addEventListener('click', function() { sendMessage(key); });
+
+    // 群聊 @ 提及支持
+    if (type === 'group') {
+        inputEl.addEventListener('input', function(e) { onMentionInput(key, this); });
+        inputEl.addEventListener('blur', function() { setTimeout(hideMentionDropdown, 200); });
+        // 预加载成员列表
+        if (!groupMembersMap.has(targetId)) {
+            api('GET', '/groups/' + targetId + '/members').then(function(data) {
+                groupMembersMap.set(targetId, data.members || []);
+            }).catch(function() {});
+        }
+    }
+
     document.getElementById('tabPanels').appendChild(panelEl);
 
     var panelMessagesEl = panelEl.querySelector('.chat-messages');
-    // 上滚加载更多
     panelMessagesEl.addEventListener('scroll', function() {
         if (this.scrollTop < 40 && chatTabs.has(key)) {
             var tab = chatTabs.get(key);
-            if (tab.hasMore && !tab._loading) {
-                tab._loading = true;
-                loadHistory(key, tab.historyPage);
-            }
+            if (tab.hasMore && !tab._loading) { tab._loading = true; loadHistory(key, tab.historyPage); }
         }
     });
 
     var headerEl = panelEl.querySelector('.chat-header');
 
     chatTabs.set(key, {
-        type: type,
-        targetId: targetId,
-        name: name,
-        messages: [],
-        historyPage: 1,
-        hasMore: true,
-        _loading: false,
-        panelEl: panelEl,
-        messagesEl: panelMessagesEl,
-        inputEl: inputEl,
-        headerEl: headerEl,
-        tabEl: tabEl
+        type: type, targetId: targetId, name: name,
+        messages: [], historyPage: 1, hasMore: true, _loading: false,
+        panelEl: panelEl, messagesEl: panelMessagesEl,
+        inputEl: inputEl, headerEl: headerEl, tabEl: tabEl
     });
 
-    // 群详情按钮点击事件
     if (type === 'group') {
         headerEl.querySelector('button').addEventListener('click', function(e) {
-            e.stopPropagation();
-            toggleGroupPanel(key);
+            e.stopPropagation(); toggleGroupPanel(key);
         });
     }
 }
 
 function switchToTab(key) {
-    // 旧标签取消激活
     if (activeTabKey && chatTabs.has(activeTabKey)) {
         var old = chatTabs.get(activeTabKey);
-        old.panelEl.classList.add('hidden');
-        old.tabEl.classList.remove('active');
+        old.panelEl.classList.add('hidden'); old.tabEl.classList.remove('active');
     }
-    // 新标签激活
     var tab = chatTabs.get(key);
-    tab.panelEl.classList.remove('hidden');
-    tab.tabEl.classList.add('active');
-    activeTabKey = key;
-    tab.inputEl.focus();
-
+    tab.panelEl.classList.remove('hidden'); tab.tabEl.classList.add('active');
+    activeTabKey = key; tab.inputEl.focus();
     var placeholder = document.getElementById('noChatPlaceholder');
     if (placeholder) placeholder.style.display = 'none';
-
-    // 更新侧边栏高亮
     document.querySelectorAll('.sidebar-item').forEach(function(el) {
         el.classList.toggle('active', el.dataset.key === key);
     });
-
-    // 群详情面板跟随标签切换
     var panel = document.getElementById('groupPanel');
     if (!panel.classList.contains('hidden')) {
-        if (tab.type === 'group') {
-            currentGroupPanelKey = key;
-            loadGroupPanel(key);
-        } else {
-            closeGroupPanel();
-        }
+        if (tab.type === 'group') { currentGroupPanelKey = key; loadGroupPanel(key); }
+        else closeGroupPanel();
     }
 }
 
@@ -425,28 +372,15 @@ function closeTab(key) {
     var tab = chatTabs.get(key);
     if (!tab) return;
     var wasActive = (key === activeTabKey);
-
     var keys = Array.from(chatTabs.keys());
     var idx = keys.indexOf(key);
     var fallbackKey = keys[idx + 1] || keys[idx - 1] || null;
-
-    // 如果该标签的群详情面板正在显示，关闭面板
-    if (currentGroupPanelKey === key) {
-        closeGroupPanel();
-    }
-
-    tab.panelEl.remove();
-    tab.tabEl.remove();
-    chatTabs.delete(key);
-
+    if (currentGroupPanelKey === key) closeGroupPanel();
+    tab.panelEl.remove(); tab.tabEl.remove(); chatTabs.delete(key);
     if (wasActive) {
         activeTabKey = null;
-        if (fallbackKey) {
-            switchToTab(fallbackKey);
-        } else {
-            var placeholder = document.getElementById('noChatPlaceholder');
-            if (placeholder) placeholder.style.display = '';
-        }
+        if (fallbackKey) switchToTab(fallbackKey);
+        else { var ph = document.getElementById('noChatPlaceholder'); if (ph) ph.style.display = ''; }
     }
 }
 
@@ -455,88 +389,149 @@ function updateTabBadge(key) {
     if (!tab) return;
     var badgeEl = tab.tabEl.querySelector('.tab-badge');
     var count = unreadCounts.get(key) || 0;
-    if (count > 0) {
-        badgeEl.textContent = count;
-        badgeEl.style.display = 'inline';
-    } else {
-        badgeEl.style.display = 'none';
+    if (count > 0) { badgeEl.textContent = count; badgeEl.style.display = 'inline'; }
+    else badgeEl.style.display = 'none';
+}
+
+// ========================================
+// @ 提及下拉
+// ========================================
+function onMentionInput(key, inputEl) {
+    var val = inputEl.value;
+    var cursorPos = inputEl.selectionStart;
+    // 找到光标前最近的 @
+    var atIdx = val.lastIndexOf('@', cursorPos - 1);
+    if (atIdx === -1 || (atIdx > 0 && val.charAt(atIdx - 1) !== ' ' && val.charAt(atIdx - 1) !== '')) {
+        // @ 不在词首则隐藏（简单处理：@ 前面必须是空格或行首）
+        if (atIdx > 0 && val.charAt(atIdx - 1) !== ' ') { hideMentionDropdown(); return; }
     }
+    if (atIdx === -1) { hideMentionDropdown(); return; }
+
+    var filter = val.substring(atIdx + 1, cursorPos).toLowerCase();
+    var parts = key.split(':');
+    var groupId = parseInt(parts[1]);
+    var members = groupMembersMap.get(groupId) || [];
+    if (members.length === 0) return;
+
+    var myId = getUserId();
+    var filtered = members.filter(function(m) {
+        if (m.user_id === myId) return false; // 不 @ 自己
+        var dn = (m.nickname || m.username || '').toLowerCase();
+        return filter === '' || dn.indexOf(filter) !== -1;
+    });
+
+    if (filtered.length === 0) { hideMentionDropdown(); return; }
+
+    mentionActiveInput = inputEl;
+    mentionActiveKey = key;
+    var dd = document.getElementById('mentionDropdown');
+    dd.innerHTML = filtered.map(function(m) {
+        var dn = m.nickname || m.username || ('用户' + m.user_id);
+        return '<div class="mention-item" data-user-id="' + m.user_id + '" data-name="' + escapeHtml(dn) + '" onclick="insertMention(this)">' +
+            '<span class="mention-avatar">' + escapeHtml(dn.charAt(0)) + '</span>' +
+            '<span>' + escapeHtml(dn) + '</span>' +
+        '</div>';
+    }).join('');
+    dd.classList.remove('hidden');
+    // 定位到输入框上方
+    var rect = inputEl.getBoundingClientRect();
+    dd.style.left = rect.left + 'px';
+    dd.style.top = (rect.top - dd.offsetHeight - 4) + 'px';
+    dd.style.minWidth = '180px';
+}
+
+function insertMention(el) {
+    if (!mentionActiveInput) return;
+    var name = el.dataset.name;
+    var inputEl = mentionActiveInput;
+    var val = inputEl.value;
+    var cursorPos = inputEl.selectionStart;
+    var atIdx = val.lastIndexOf('@', cursorPos - 1);
+    if (atIdx === -1) return;
+    var before = val.substring(0, atIdx);
+    var after = val.substring(cursorPos);
+    inputEl.value = before + '@' + name + ' ' + after;
+    var newPos = before.length + name.length + 2;
+    inputEl.setSelectionRange(newPos, newPos);
+    inputEl.focus();
+    hideMentionDropdown();
+}
+
+function hideMentionDropdown() {
+    document.getElementById('mentionDropdown').classList.add('hidden');
+    mentionActiveInput = null;
+    mentionActiveKey = null;
 }
 
 // ========================================
 // 群详情面板
 // ========================================
-
-// 展开/收起群详情抽屉
 function toggleGroupPanel(key) {
     var panel = document.getElementById('groupPanel');
     if (panel.classList.contains('hidden')) {
         panel.classList.remove('hidden');
-        currentGroupPanelKey = key;
-        groupPanelActiveTab = 'info';
-        document.querySelectorAll('.group-panel-tabs .gp-tab-btn').forEach(function(btn) {
-            btn.classList.toggle('active', btn.dataset.gpTab === 'info');
-        });
+        currentGroupPanelKey = key; groupPanelActiveTab = 'info';
+        document.querySelectorAll('.group-panel-tabs .gp-tab-btn').forEach(function(btn) { btn.classList.toggle('active', btn.dataset.gpTab === 'info'); });
         loadGroupPanel(key);
-    } else if (currentGroupPanelKey === key) {
-        closeGroupPanel();
-    } else {
-        currentGroupPanelKey = key;
-        groupPanelActiveTab = 'info';
-        document.querySelectorAll('.group-panel-tabs .gp-tab-btn').forEach(function(btn) {
-            btn.classList.toggle('active', btn.dataset.gpTab === 'info');
-        });
-        loadGroupPanel(key);
-    }
+    } else if (currentGroupPanelKey === key) { closeGroupPanel(); }
+    else { currentGroupPanelKey = key; groupPanelActiveTab = 'info';
+        document.querySelectorAll('.group-panel-tabs .gp-tab-btn').forEach(function(btn) { btn.classList.toggle('active', btn.dataset.gpTab === 'info'); });
+        loadGroupPanel(key); }
 }
 
-function closeGroupPanel() {
-    document.getElementById('groupPanel').classList.add('hidden');
-    currentGroupPanelKey = null;
-    groupPanelData = null;
-}
+function closeGroupPanel() { document.getElementById('groupPanel').classList.add('hidden'); currentGroupPanelKey = null; groupPanelData = null; }
 
-// 切换群详情面板内的标签页
 function switchGroupPanelTab(tab) {
     groupPanelActiveTab = tab;
-    document.querySelectorAll('.group-panel-tabs .gp-tab-btn').forEach(function(btn) {
-        btn.classList.toggle('active', btn.dataset.gpTab === tab);
-    });
+    document.querySelectorAll('.group-panel-tabs .gp-tab-btn').forEach(function(btn) { btn.classList.toggle('active', btn.dataset.gpTab === tab); });
     renderGroupPanelBody();
 }
 
-// 加载群详情数据
 async function loadGroupPanel(key) {
-    var parts = key.split(':');
-    var groupId = parseInt(parts[1]);
+    var parts = key.split(':'), groupId = parseInt(parts[1]);
     if (!groupId) return;
-
     try {
-        // 并行加载群详情和成员列表
         var detailData = await api('GET', '/groups/' + groupId);
         var membersData = await api('GET', '/groups/' + groupId + '/members');
-
         groupPanelData = {
-            group: detailData.group,
-            myRole: detailData.my_role || '',
+            group: detailData.group, myRole: detailData.my_role || '',
             isMuted: detailData.is_muted || false,
-            members: membersData.members || []
+            members: membersData.members || [],
+            dnd: detailData.dnd || false
         };
-
+        groupMembersMap.set(groupId, membersData.members || []);
+        groupDNDMap.set(groupId, detailData.dnd || false);
         document.getElementById('gpTitle').textContent = groupPanelData.group.name || '群详情';
+        updateDndBtn();
         renderGroupPanelBody();
     } catch(e) {
-        document.getElementById('groupPanelBody').innerHTML =
-            '<div class="gp-section" style="color:#e74c3c;text-align:center;padding:20px">加载失败: ' + escapeHtml(e.message) + '</div>';
+        document.getElementById('groupPanelBody').innerHTML = '<div class="gp-section" style="color:#e74c3c;text-align:center;padding:20px">加载失败: ' + escapeHtml(e.message) + '</div>';
     }
 }
 
-// 根据当前标签页渲染面板内容
+function updateDndBtn() {
+    var btn = document.getElementById('gpDndBtn');
+    if (!groupPanelData) return;
+    btn.textContent = groupPanelData.dnd ? '🔕' : '🔔';
+    btn.title = groupPanelData.dnd ? '免打扰中，点击取消' : '消息提醒开启，点击免打扰';
+}
+
+function toggleGroupDND() {
+    if (!currentGroupPanelKey) return;
+    var parts = currentGroupPanelKey.split(':'), groupId = parseInt(parts[1]);
+    api('POST', '/groups/' + groupId + '/dnd').then(function(data) {
+        groupPanelData.dnd = data.dnd;
+        groupDNDMap.set(groupId, data.dnd);
+        updateDndBtn();
+        renderSidebar(); // 更新侧边栏图标
+    }).catch(function(e) { alert('操作失败: ' + e.message); });
+}
+
 function renderGroupPanelBody() {
     if (!groupPanelData) return;
     switch (groupPanelActiveTab) {
         case 'info': renderGroupInfo(); break;
-        case 'announce': renderGroupAnnounce(); break;
+        case 'announce': loadGroupAnnouncements(); break;
         case 'members': renderGroupMembers(); break;
     }
 }
@@ -545,27 +540,30 @@ function renderGroupPanelBody() {
 function renderGroupInfo() {
     var g = groupPanelData.group;
     var ownerName = '';
-    var ownerMember = groupPanelData.members.find(function(m) { return m.user_id === g.owner_id; });
-    if (ownerMember) {
-        ownerName = ownerMember.nickname || ownerMember.username || ('用户' + g.owner_id);
-    } else {
-        ownerName = '用户' + g.owner_id;
-    }
+    var om = groupPanelData.members.find(function(m) { return m.user_id === g.owner_id; });
+    if (om) ownerName = om.nickname || om.username || ('用户' + g.owner_id);
+    else ownerName = '用户' + g.owner_id;
     var createdAt = g.created_at ? new Date(g.created_at).toLocaleString('zh-CN') : '-';
 
-    var html = '<div class="gp-section">' +
-        '<h3>基本信息</h3>' +
+    var html = '<div class="gp-section"><h3>基本信息</h3>' +
         '<div class="gp-row"><span>群名称</span><span>' + escapeHtml(g.name) + '</span></div>' +
-        '<div class="gp-row"><span>群主</span><span>' + escapeHtml(ownerName) + '</span></div>' +
+        '<div class="gp-row"><span>群主</span><span><a href="/profile?user_id=' + g.owner_id + '" style="color:var(--link-color)">' + escapeHtml(ownerName) + '</a></span></div>' +
         '<div class="gp-row"><span>创建时间</span><span>' + escapeHtml(createdAt) + '</span></div>' +
         '<div class="gp-row"><span>成员数</span><span>' + groupPanelData.members.length + '</span></div>' +
     '</div>';
 
-    // 群主可编辑群名称
+    // 群简介
+    html += '<div class="gp-section"><h3>群简介</h3>' +
+        '<div style="color:#666;font-size:14px;white-space:pre-wrap">' + escapeHtml(g.description || '暂无简介') + '</div>' +
+    '</div>';
+
+    // 群主可编辑
     if (groupPanelData.myRole === 'owner') {
-        html += '<div class="gp-section">' +
-            '<h3>编辑群名称</h3>' +
+        html += '<div class="gp-section"><h3>编辑群资料</h3>' +
+            '<label class="gp-label">群名称</label>' +
             '<input class="gp-input" id="gpEditName" value="' + escapeHtml(g.name) + '" placeholder="输入新群名称">' +
+            '<label class="gp-label">群简介</label>' +
+            '<input class="gp-input" id="gpEditDesc" value="' + escapeHtml(g.description || '') + '" placeholder="输入群简介">' +
             '<div class="gp-actions" style="margin-top:8px">' +
                 '<button class="gp-btn gp-btn-primary" onclick="saveGroupInfo(' + g.id + ')">保存</button>' +
             '</div>' +
@@ -577,80 +575,81 @@ function renderGroupInfo() {
 
 function saveGroupInfo(groupId) {
     var newName = document.getElementById('gpEditName').value.trim();
+    var newDesc = document.getElementById('gpEditDesc').value.trim();
     if (!newName) return;
-    api('PUT', '/groups/' + groupId, { name: newName }).then(function() {
-        // 更新内存数据
+    api('PUT', '/groups/' + groupId, { name: newName, description: newDesc }).then(function() {
         groupPanelData.group.name = newName;
-        // 更新 tab 名称和 header
+        groupPanelData.group.description = newDesc;
         var key = 'group:' + groupId;
         var tab = chatTabs.get(key);
-        if (tab) {
-            tab.name = newName;
-            tab.tabEl.querySelector('.tab-name').textContent = newName;
-            var hSpan = tab.headerEl.querySelector('span');
-            if (hSpan) hSpan.textContent = newName;
-        }
-        // 同步更新侧边栏 conversations 和 sidebarGroups
+        if (tab) { tab.name = newName; tab.tabEl.querySelector('.tab-name').textContent = newName;
+            var hSpan = tab.headerEl.querySelector('span'); if (hSpan) hSpan.textContent = newName; }
         var conv = conversations.find(function(c) { return c.key === key; });
         if (conv) conv.name = newName;
         var g = sidebarGroups.find(function(g) { return g.id === groupId; });
-        if (g) g.name = newName;
-        renderSidebar();
-        renderGroupInfo();
-    }).catch(function(e) {
-        alert('保存失败: ' + e.message);
-    });
+        if (g) { g.name = newName; g.description = newDesc; }
+        renderSidebar(); renderGroupInfo();
+    }).catch(function(e) { alert('保存失败: ' + e.message); });
 }
 
 // ---- 群公告标签 ----
-function renderGroupAnnounce() {
-    var g = groupPanelData.group;
-    var announce = g.announce || '';
-    var html = '';
-
-    if (announce) {
-        html += '<div class="gp-section">' +
-            '<h3>当前公告</h3>' +
-            '<div class="announce-content">' + escapeHtml(announce) + '</div>' +
-        '</div>';
-    } else {
-        html += '<div class="gp-section">' +
-            '<h3>当前公告</h3>' +
-            '<div style="color:#999;padding:12px">暂无公告</div>' +
-        '</div>';
+async function loadGroupAnnouncements() {
+    if (!currentGroupPanelKey) return;
+    var parts = currentGroupPanelKey.split(':'), groupId = parseInt(parts[1]);
+    try {
+        var data = await api('GET', '/groups/' + groupId + '/announcements');
+        renderGroupAnnounce(data.announcements || [], groupId);
+    } catch(e) {
+        document.getElementById('groupPanelBody').innerHTML = '<div class="gp-section" style="color:#e74c3c">加载公告失败: ' + escapeHtml(e.message) + '</div>';
     }
+}
 
-    // 群主和管理员可编辑公告
+function renderGroupAnnounce(announcements, groupId) {
+    var html = '';
+    // 发布公告表单
     if (groupPanelData.myRole === 'owner' || groupPanelData.myRole === 'admin') {
-        html += '<div class="gp-section">' +
-            '<h3>编辑公告</h3>' +
-            '<textarea class="gp-textarea" id="gpEditAnnounce" placeholder="输入群公告...">' + escapeHtml(announce) + '</textarea>' +
+        html += '<div class="gp-section"><h3>发布公告</h3>' +
+            '<textarea class="gp-textarea" id="gpNewAnnounce" placeholder="输入公告内容..."></textarea>' +
             '<div class="gp-actions" style="margin-top:8px">' +
-                '<button class="gp-btn gp-btn-primary" onclick="saveAnnounce(' + g.id + ')">发布</button>' +
+                '<button class="gp-btn gp-btn-primary" onclick="publishAnnounce(' + groupId + ')">发布</button>' +
             '</div>' +
         '</div>';
     }
 
+    // 公告历史
+    html += '<div class="gp-section"><h3>公告历史 (' + announcements.length + ')</h3>';
+    if (announcements.length === 0) {
+        html += '<div style="color:#999;padding:12px">暂无公告</div>';
+    } else {
+        announcements.forEach(function(a) {
+            var time = a.created_at ? new Date(a.created_at).toLocaleString('zh-CN') : '-';
+            html += '<div class="announce-item" style="padding:10px;border-bottom:1px solid #eee;margin-bottom:6px">' +
+                '<div class="announce-content" style="white-space:pre-wrap;margin-bottom:4px">' + escapeHtml(a.content) + '</div>' +
+                '<div style="font-size:11px;color:#999">' + escapeHtml(a.editor || '') + ' · ' + time + '</div>' +
+            '</div>';
+        });
+    }
+    html += '</div>';
+
     document.getElementById('groupPanelBody').innerHTML = html;
 }
 
-function saveAnnounce(groupId) {
-    var text = document.getElementById('gpEditAnnounce').value;
-    api('PUT', '/groups/' + groupId, { announce: text }).then(function() {
+function publishAnnounce(groupId) {
+    var text = document.getElementById('gpNewAnnounce').value.trim();
+    if (!text) { alert('公告内容不能为空'); return; }
+    api('POST', '/groups/' + groupId + '/announcements', { content: text }).then(function() {
+        document.getElementById('gpNewAnnounce').value = '';
+        // 同步更新 group.current announce
         groupPanelData.group.announce = text;
-        renderGroupAnnounce();
-    }).catch(function(e) {
-        alert('保存失败: ' + e.message);
-    });
+        loadGroupAnnouncements();
+    }).catch(function(e) { alert('发布失败: ' + e.message); });
 }
 
 // ---- 群成员标签 ----
 function renderGroupMembers() {
-    var myRole = groupPanelData.myRole;
-    var myUserId = getUserId();
+    var myRole = groupPanelData.myRole, myUserId = getUserId();
     var html = '<div class="gp-section"><h3>群成员 (' + groupPanelData.members.length + ')</h3>';
 
-    // 群主/管理员可添加成员
     if (myRole === 'owner' || myRole === 'admin') {
         html += '<div class="gp-row" style="margin-bottom:10px">' +
             '<input type="number" id="gpAddMemberInput" placeholder="输入用户 ID" class="gp-input" style="width:120px;margin:0">' +
@@ -660,50 +659,36 @@ function renderGroupMembers() {
 
     groupPanelData.members.forEach(function(m) {
         var displayName = m.nickname || m.username || ('用户' + m.user_id);
-        var roleLabel = '';
-        var roleCls = '';
+        var roleLabel = '', roleCls = '';
         if (m.role === 'owner') { roleLabel = '群主'; roleCls = 'owner'; }
         else if (m.role === 'admin') { roleLabel = '管理员'; roleCls = 'admin'; }
         else { roleLabel = '成员'; roleCls = 'member'; }
-
         var isMuted = m.muted_until && new Date(m.muted_until) > new Date();
+        var dndIcon = m.dnd ? ' 🔕' : '';
 
         html += '<div class="gp-member-item" data-user-id="' + m.user_id + '">' +
             '<div class="member-info">' +
                 '<span>' + escapeHtml(displayName.charAt(0)) + '</span>' +
-                '<span style="margin-left:6px">' + escapeHtml(displayName) + '</span>' +
+                '<a href="/profile?user_id=' + m.user_id + '" style="margin-left:6px;color:var(--link-color)" title="查看资料">' + escapeHtml(displayName) + '</a>' +
                 '<span class="role-tag ' + roleCls + '">' + roleLabel + '</span>' +
                 (isMuted ? '<span class="muted-tag">禁言中</span>' : '') +
-            '</div>' +
-            '<div class="gp-actions">';
+                dndIcon +
+            '</div><div class="gp-actions">';
 
-        // 权限按钮
         if (m.user_id !== myUserId) {
             if (myRole === 'owner' && m.role !== 'owner') {
-                // 群主对所有非群主成员的操作
-                if (isMuted) {
-                    html += '<button class="gp-btn gp-btn-warn" onclick="unmuteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">解禁</button>';
-                } else {
-                    html += '<button class="gp-btn gp-btn-warn" onclick="muteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">禁言</button>';
-                }
+                if (isMuted) html += '<button class="gp-btn gp-btn-warn" onclick="unmuteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">解禁</button>';
+                else html += '<button class="gp-btn gp-btn-warn" onclick="muteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">禁言</button>';
                 html += '<button class="gp-btn gp-btn-danger" onclick="kickMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">踢出</button>';
-                if (m.role === 'admin') {
-                    html += '<button class="gp-btn" style="background:#888;color:#fff" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">取消管理</button>';
-                } else {
-                    html += '<button class="gp-btn" style="background:#2b5f8a;color:#fff" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">设管理</button>';
-                }
+                if (m.role === 'admin') html += '<button class="gp-btn" style="background:#888;color:#fff" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">取消管理</button>';
+                else html += '<button class="gp-btn" style="background:#2b5f8a;color:#fff" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">设管理</button>';
                 html += '<button class="gp-btn gp-btn-primary" onclick="transferOwnerAction(' + groupPanelData.group.id + ',' + m.user_id + ')">转让</button>';
             } else if (myRole === 'admin' && m.role === 'member') {
-                // 管理员对普通成员的操作
-                if (isMuted) {
-                    html += '<button class="gp-btn gp-btn-warn" onclick="unmuteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">解禁</button>';
-                } else {
-                    html += '<button class="gp-btn gp-btn-warn" onclick="muteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">禁言</button>';
-                }
+                if (isMuted) html += '<button class="gp-btn gp-btn-warn" onclick="unmuteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">解禁</button>';
+                else html += '<button class="gp-btn gp-btn-warn" onclick="muteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">禁言</button>';
                 html += '<button class="gp-btn gp-btn-danger" onclick="kickMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">踢出</button>';
             }
         }
-
         html += '</div></div>';
     });
 
@@ -712,72 +697,64 @@ function renderGroupMembers() {
 }
 
 // ---- 群操作函数 ----
-
-function addMemberAction(groupId) {
+function addMemberAction(groupId) { /* ... 同上 ... */
     var userId = parseInt(document.getElementById('gpAddMemberInput').value);
     if (!userId) { alert('请输入有效的用户 ID'); return; }
     api('POST', '/groups/' + groupId + '/add-member', { user_id: userId }).then(function() {
-        document.getElementById('gpAddMemberInput').value = '';
-        reloadGroupPanel();
-    }).catch(function(e) {
-        alert('添加失败: ' + e.message);
-    });
+        document.getElementById('gpAddMemberInput').value = ''; reloadGroupPanel();
+    }).catch(function(e) { alert('添加失败: ' + e.message); });
 }
 
 function kickMemberAction(groupId, userId) {
     if (!confirm('确认踢出该成员？')) return;
-    api('POST', '/groups/' + groupId + '/kick', { user_id: userId }).then(function() {
-        reloadGroupPanel();
-    }).catch(function(e) {
-        alert('操作失败: ' + e.message);
-    });
+    api('POST', '/groups/' + groupId + '/kick', { user_id: userId }).then(function() { reloadGroupPanel(); }).catch(function(e) { alert('操作失败: ' + e.message); });
 }
 
 function muteMemberAction(groupId, userId) {
     var minutes = prompt('请输入禁言分钟数:', '10');
     if (!minutes) return;
-    minutes = parseInt(minutes);
-    if (!minutes || minutes < 1) return;
-    api('POST', '/groups/' + groupId + '/mute', { user_id: userId, minutes: minutes }).then(function() {
-        reloadGroupPanel();
-    }).catch(function(e) {
-        alert('操作失败: ' + e.message);
-    });
+    minutes = parseInt(minutes); if (!minutes || minutes < 1) return;
+    api('POST', '/groups/' + groupId + '/mute', { user_id: userId, minutes: minutes }).then(function() { reloadGroupPanel(); }).catch(function(e) { alert('操作失败: ' + e.message); });
 }
 
 function unmuteMemberAction(groupId, userId) {
-    api('POST', '/groups/' + groupId + '/unmute', { user_id: userId }).then(function() {
-        reloadGroupPanel();
-    }).catch(function(e) {
-        alert('操作失败: ' + e.message);
-    });
+    api('POST', '/groups/' + groupId + '/unmute', { user_id: userId }).then(function() { reloadGroupPanel(); }).catch(function(e) { alert('操作失败: ' + e.message); });
 }
 
 function setAdminAction(groupId, userId) {
-    api('PUT', '/groups/' + groupId + '/admin/' + userId).then(function() {
-        reloadGroupPanel();
-    }).catch(function(e) {
-        alert('操作失败: ' + e.message);
-    });
+    api('PUT', '/groups/' + groupId + '/admin/' + userId).then(function() { reloadGroupPanel(); }).catch(function(e) { alert('操作失败: ' + e.message); });
 }
 
 function transferOwnerAction(groupId, userId) {
     if (!confirm('确认将群主转让给该成员？此操作不可撤销。')) return;
-    api('PUT', '/groups/' + groupId + '/transfer', { new_owner_id: userId }).then(function() {
-        reloadGroupPanel();
-    }).catch(function(e) {
-        alert('操作失败: ' + e.message);
-    });
+    api('PUT', '/groups/' + groupId + '/transfer', { new_owner_id: userId }).then(function() { reloadGroupPanel(); }).catch(function(e) { alert('操作失败: ' + e.message); });
 }
 
-// 重新加载群详情面板
 function reloadGroupPanel() {
     if (currentGroupPanelKey) {
         loadGroupPanel(currentGroupPanelKey);
-        // 同步刷新侧边栏群列表
         loadGroups().then(function() { buildConversations(); sortConversations(); renderSidebar(); });
     }
 }
+
+// ========================================
+// 消息提示音控制（免打扰 + @ 提醒）
+// ========================================
+// 返回 true 表示应该抑制提示音
+window.__suppressSound = function(msg) {
+    if (!msg.group_id) return false; // 非群消息不抑制
+    var groupId = msg.group_id;
+    // 免打扰检查
+    if (!groupDNDMap.get(groupId)) return false; // 未开启免打扰，正常播放
+    // 开启免打扰，检查是否被 @
+    if (!msg.mentions) return true; // 无 @ 信息，抑制
+    var myId = getUserId();
+    try {
+        var ids = JSON.parse(msg.mentions);
+        if (!Array.isArray(ids) || ids.indexOf(myId) === -1) return true; // 未被 @，抑制
+    } catch(e) { return true; }
+    return false; // 被 @ 了，不抑制
+};
 
 // ========================================
 // 消息接收路由
@@ -785,7 +762,6 @@ function reloadGroupPanel() {
 onMessage = function(msg) {
     var myId = getUserId();
     var key;
-
     if (msg.group_id !== null && msg.group_id !== undefined && msg.group_id !== 0) {
         key = 'group:' + msg.group_id;
     } else if (msg.to_user_id !== null && msg.to_user_id !== undefined && msg.to_user_id !== 0) {
@@ -799,16 +775,12 @@ onMessage = function(msg) {
     lastTimestamps.set(key, new Date(msg.created_at || Date.now()));
     updateSidebarPreview(key, msg);
 
-    // 如果该会话不在 conversations 中但存在于已加载数据中，补充进去
+    // 新会话补充进 conversations
     if (!conversations.find(function(c) { return c.key === key; })) {
-        if (key === 'broadcast') {
-            // 广播已在 buildConversations 中添加，这里不应该走到
-        } else if (key.startsWith('group:')) {
+        if (key.startsWith('group:')) {
             var gid = parseInt(key.split(':')[1]);
             var g = sidebarGroups.find(function(g) { return g.id === gid; });
-            if (g) {
-                conversations.push({ key: key, type: 'group', targetId: gid, name: g.name, avatarChar: g.name.charAt(0) });
-            }
+            if (g) conversations.push({ key: key, type: 'group', targetId: gid, name: g.name, avatarChar: g.name.charAt(0) });
         } else if (key.startsWith('user:')) {
             var uid = parseInt(key.split(':')[1]);
             var f = sidebarFriends.find(function(f) { return f.friend_id === uid; });
@@ -820,14 +792,10 @@ onMessage = function(msg) {
     }
 
     resortSidebarItem(key);
-    // 当有新会话加入 conversation 时，重渲染侧边栏以显示新增项
     if (!document.querySelector('.sidebar-item[data-key="' + key + '"]')) {
         renderSidebar();
-        // 重新绑定高亮
         if (activeTabKey) {
-            document.querySelectorAll('.sidebar-item').forEach(function(el) {
-                el.classList.toggle('active', el.dataset.key === activeTabKey);
-            });
+            document.querySelectorAll('.sidebar-item').forEach(function(el) { el.classList.toggle('active', el.dataset.key === activeTabKey); });
         }
     }
 
@@ -837,13 +805,8 @@ onMessage = function(msg) {
         if (key === activeTabKey) {
             tab.messagesEl.innerHTML += renderOneMessage(msg);
             tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
-        } else {
-            unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1);
-            updateTabBadge(key);
-        }
-    } else {
-        unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1);
-    }
+        } else { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); updateTabBadge(key); }
+    } else { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); }
 
     updateSidebarBadge(key);
 };
@@ -854,12 +817,10 @@ onMessage = function(msg) {
 function renderOneMessage(msg) {
     var isMe = msg.from_user_id === getUserId();
     var cls = isMe ? 'from-me' : '';
-    var name = msg.from_user
-        ? (msg.from_user.nickname || msg.from_user.username)
-        : ('用户' + msg.from_user_id);
+    var name = msg.from_user ? (msg.from_user.nickname || msg.from_user.username) : ('用户' + msg.from_user_id);
     return '<div class="msg ' + cls + '">' +
         '<div class="bubble">' +
-            '<div class="meta">' + escapeHtml(name) + '</div>' +
+            '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" style="color:var(--link-color)">' + escapeHtml(name) + '</a></div>' +
             escapeHtml(msg.content) +
         '</div>' +
     '</div>';
@@ -867,14 +828,12 @@ function renderOneMessage(msg) {
 
 function renderAllMessages(tab) {
     var html = '';
-    for (var i = 0; i < tab.messages.length; i++) {
-        html += renderOneMessage(tab.messages[i]);
-    }
+    for (var i = 0; i < tab.messages.length; i++) html += renderOneMessage(tab.messages[i]);
     tab.messagesEl.innerHTML = html;
 }
 
 // ========================================
-// 发送消息
+// 发送消息（含 @ 提及提取）
 // ========================================
 function sendMessage(key) {
     var tab = chatTabs.get(key || activeTabKey);
@@ -882,15 +841,24 @@ function sendMessage(key) {
     var content = tab.inputEl.value.trim();
     if (!content) return;
 
-    var msg = {
-        type: 'text',
-        from_user_id: getUserId(),
-        content: content
-    };
-    if (tab.type === 'user') {
-        msg.to_user_id = tab.targetId;
-    } else if (tab.type === 'group') {
+    var msg = { type: 'text', from_user_id: getUserId(), content: content };
+    if (tab.type === 'user') { msg.to_user_id = tab.targetId; }
+    else if (tab.type === 'group') {
         msg.group_id = tab.targetId;
+        // 提取 @ 提及的用户 ID
+        var members = groupMembersMap.get(tab.targetId) || [];
+        var mentionIds = [];
+        var re = /@(\S+)/g;
+        var match;
+        while ((match = re.exec(content)) !== null) {
+            var atName = match[1].toLowerCase();
+            var found = members.find(function(m) {
+                var dn = (m.nickname || m.username || '').toLowerCase();
+                return dn === atName;
+            });
+            if (found && mentionIds.indexOf(found.user_id) === -1) mentionIds.push(found.user_id);
+        }
+        if (mentionIds.length > 0) msg.mentions = JSON.stringify(mentionIds);
     }
 
     sendWS(msg);
@@ -904,50 +872,26 @@ async function loadHistory(key, page) {
     var tab = chatTabs.get(key);
     if (!tab) return;
     page = page || 1;
-
     var url;
-    if (tab.type === 'user') {
-        url = '/history?peer_id=' + tab.targetId + '&page=' + page + '&page_size=30';
-    } else if (tab.type === 'group') {
-        url = '/history/group/' + tab.targetId + '?page=' + page + '&page_size=30';
-    } else {
-        url = '/history/broadcast?page=' + page + '&page_size=30';
-    }
-
+    if (tab.type === 'user') url = '/history?peer_id=' + tab.targetId + '&page=' + page + '&page_size=30';
+    else if (tab.type === 'group') url = '/history/group/' + tab.targetId + '?page=' + page + '&page_size=30';
+    else url = '/history/broadcast?page=' + page + '&page_size=30';
     try {
         var data = await api('GET', url);
         tab._loading = false;
-        if (!data.messages || data.messages.length === 0) {
-            tab.hasMore = false;
-            return;
-        }
+        if (!data.messages || data.messages.length === 0) { tab.hasMore = false; return; }
         var newMsgs = data.messages.reverse();
-
-        if (page === 1) {
-            tab.messages = newMsgs;
-            renderAllMessages(tab);
-            tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
-        } else {
-            var oldH = tab.messagesEl.scrollHeight;
-            tab.messages = newMsgs.concat(tab.messages);
-            renderAllMessages(tab);
-            tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight - oldH;
-        }
+        if (page === 1) { tab.messages = newMsgs; renderAllMessages(tab); tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight; }
+        else { var oldH = tab.messagesEl.scrollHeight; tab.messages = newMsgs.concat(tab.messages); renderAllMessages(tab); tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight - oldH; }
         tab.historyPage = page + 1;
         if (data.messages.length < 30) tab.hasMore = false;
-    } catch(e) {
-        tab._loading = false;
-        console.error(e);
-    }
+    } catch(e) { tab._loading = false; console.error(e); }
 }
 
 // ========================================
-// URL 参数处理（来自 contacts/groups 页跳转）
+// URL 参数处理
 // ========================================
-var pendingOpenKey = null;
-var pendingOpenType = null;
-var pendingOpenTarget = null;
-
+var pendingOpenKey = null, pendingOpenType = null, pendingOpenTarget = null;
 var urlParams = new URLSearchParams(window.location.search);
 var peerParam = urlParams.get('peer');
 var typeParam = urlParams.get('type') || 'user';
@@ -959,26 +903,22 @@ if (peerParam) {
 }
 
 function escapeHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s || '';
-    return d.innerHTML;
+    var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
 }
 
 // ========================================
 // 初始化
 // ========================================
-
 async function init() {
     await Promise.all([loadFriends(), loadGroups()]);
+    await loadGroupMetadata();
     buildConversations();
     await loadLastMessages();
     sortConversations();
     renderSidebar();
-
     if (pendingOpenKey) {
-        var name = '';
         var conv = conversations.find(function(c) { return c.key === pendingOpenKey; });
-        name = conv ? conv.name : ('用户' + pendingOpenTarget);
+        var name = conv ? conv.name : ('用户' + pendingOpenTarget);
         openOrSwitchTab(pendingOpenKey, pendingOpenType, pendingOpenTarget, name);
     }
 }

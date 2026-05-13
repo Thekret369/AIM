@@ -3,6 +3,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"AIM/internal/service"
 
@@ -73,21 +74,38 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"user": user})
+	c.JSON(http.StatusOK, gin.H{"user": user, "is_self": true})
 }
 
-// UpdateProfile 更新个人信息（昵称、头像）
+// GetUserProfile 查看指定用户的公开资料（不返回密码、tokenVersion 等敏感字段）
+func (h *AuthHandler) GetUserProfile(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户 ID"})
+		return
+	}
+	user, err := h.Svc.GetProfile(uint(userID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	isSelf := c.GetUint("user_id") == uint(userID)
+	c.JSON(http.StatusOK, gin.H{"user": user, "is_self": isSelf})
+}
+
+// UpdateProfile 更新个人信息（昵称、头像、简介）
 func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var req struct {
 		Nickname string `json:"nickname"`
 		Avatar   string `json:"avatar"`
+		Bio      string `json:"bio"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
-	user, err := h.Svc.UpdateProfile(userID, req.Nickname, req.Avatar)
+	user, err := h.Svc.UpdateProfile(userID, req.Nickname, req.Avatar, req.Bio)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

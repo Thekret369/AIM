@@ -99,8 +99,8 @@ func (s *AuthService) GetProfile(userID uint) (*model.User, error) {
 	return &user, nil
 }
 
-// UpdateProfile 更新昵称和头像
-func (s *AuthService) UpdateProfile(userID uint, nickname, avatar string) (*model.User, error) {
+// UpdateProfile 更新昵称、头像和简介
+func (s *AuthService) UpdateProfile(userID uint, nickname, avatar, bio string) (*model.User, error) {
 	var user model.User
 	if err := model.DB.First(&user, userID).Error; err != nil {
 		return nil, err
@@ -112,6 +112,8 @@ func (s *AuthService) UpdateProfile(userID uint, nickname, avatar string) (*mode
 	if avatar != "" {
 		updates["avatar"] = avatar
 	}
+	// bio 允许置空
+	updates["bio"] = bio
 	if len(updates) > 0 {
 		if err := model.DB.Model(&user).Updates(updates).Error; err != nil {
 			return nil, err
