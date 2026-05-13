@@ -140,7 +140,7 @@ function applyFontSize(size) {
     else if (size === 'large') document.body.classList.add('font-large');
 }
 
-// 从服务端加载设置并应用（所有页面在初始化时调用）
+// 从服务端加载设置并启用 WebSocket（所有页面在初始化时调用）
 async function loadAndApplySettings() {
     try {
         const data = await api('GET', '/settings');
@@ -148,13 +148,13 @@ async function loadAndApplySettings() {
         applyTheme(s.theme || 'light');
         applyFontSize(s.font_size || 'medium');
         window.__soundEnabled = s.sound_enabled !== false;
-        return s;
     } catch (e) {
         applyTheme('light');
         applyFontSize('medium');
         window.__soundEnabled = true;
-        return null;
     }
+    // 各页面统一建立 WebSocket，保证任意页面都能收到消息提示音
+    connectWS();
 }
 
 // ========================================
