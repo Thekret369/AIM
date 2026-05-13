@@ -60,7 +60,9 @@
 
 <script src="/static/app.js"></script>
 <script>
-document.getElementById('navUser').textContent = getUserNickname();
+function loadNavUser() {
+    document.getElementById('navUser').textContent = getUserNickname();
+}
 
 // 加载好友列表
 async function loadFriends() {
@@ -173,6 +175,7 @@ function escapeHtml(s) {
     return div.innerHTML;
 }
 
+loadNavUser();
 loadAndApplySettings();
 loadFriends();
 loadPending();

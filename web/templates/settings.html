@@ -114,12 +114,15 @@ async function loadSettings() {
     renderSettings();
 }
 
-// 将当前设置反映到表单控件
+// 将当前设置反映到表单控件，并即时应用主题和字体
 function renderSettings() {
     document.getElementById('themeSelect').value = settings.theme || 'light';
     document.getElementById('fontSizeSelect').value = settings.font_size || 'medium';
     document.getElementById('enterToSend').checked = settings.enter_to_send !== false;
     document.getElementById('soundEnabled').checked = settings.sound_enabled !== false;
+
+    applyTheme(settings.theme || 'light');
+    applyFontSize(settings.font_size || 'medium');
 }
 
 // 表单变化时即时收集并保存
