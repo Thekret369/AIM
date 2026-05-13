@@ -43,6 +43,7 @@ func main() {
 	groupSvc := &service.GroupService{}
 	contactSvc := &service.ContactGroupService{}
 	chatSvc := &service.ChatService{Hub: hub}
+	settingsSvc := &service.SettingsService{}
 
 	// 启动消息消费协程：从 Hub.OnMessage 读取，经 ChatService 持久化并路由
 	go func() {
@@ -59,6 +60,7 @@ func main() {
 	groupH := &handler.GroupHandler{Svc: groupSvc}
 	contactH := &handler.ContactGroupHandler{Svc: contactSvc}
 	chatH := &handler.ChatHandler{Svc: chatSvc, Hub: hub, JWTSecret: cfg.JWT.Secret}
+	settingsH := &handler.SettingsHandler{Svc: settingsSvc}
 
 	// 配置 Gin 路由
 	gin.SetMode(gin.ReleaseMode)
@@ -125,6 +127,10 @@ func main() {
 		auth.PUT("/profile", authH.UpdateProfile)
 		auth.PUT("/profile/password", authH.ChangePassword)
 
+		// 用户设置
+		auth.GET("/settings", settingsH.Get)
+		auth.PUT("/settings", settingsH.Update)
+
 		// 消息历史
 		auth.GET("/history", chatH.GetHistory)
 		auth.GET("/history/group/:id", chatH.GetGroupHistory)
@@ -143,6 +149,9 @@ func main() {
 	})
 	r.GET("/profile", middleware.AuthRequired(cfg.JWT.Secret), func(c *gin.Context) {
 		c.HTML(200, "profile.html", nil)
+	})
+	r.GET("/settings", middleware.AuthRequired(cfg.JWT.Secret), func(c *gin.Context) {
+		c.HTML(200, "settings.html", nil)
 	})
 
 	// 优雅关闭

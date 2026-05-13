@@ -1,70 +1,128 @@
 /* AIM 即时通讯系统样式 */
+
+/* ---- CSS 变量：主题与字体 ---- */
+:root {
+	--bg: #f0f2f5;
+	--surface: #fff;
+	--surface-hover: #f5f7fa;
+	--text: #333;
+	--text-secondary: #555;
+	--text-muted: #888;
+	--border: #ddd;
+	--border-light: #eee;
+	--nav-bg: #2b5f8a;
+	--nav-text: #fff;
+	--primary: #2b5f8a;
+	--primary-hover: #1e4a6e;
+	--bubble-friend: #e8f4fd;
+	--bubble-me: #2b5f8a;
+	--bubble-me-text: #fff;
+	--input-bg: #fff;
+	--input-border: #ddd;
+	--font-scale: 1;
+
+	/* 过渡动画 */
+	--transition-speed: 0.25s;
+}
+
+/* 深色主题 */
+body.theme-dark {
+	--bg: #1a1a2e;
+	--surface: #252545;
+	--surface-hover: #2e2e55;
+	--text: #e0e0e0;
+	--text-secondary: #b0b0c0;
+	--text-muted: #888;
+	--border: #3a3a5a;
+	--border-light: #2a2a4a;
+	--nav-bg: #151530;
+	--nav-text: #e0e0e0;
+	--primary: #4a8fd4;
+	--primary-hover: #3a7bc4;
+	--bubble-friend: #2e2e55;
+	--bubble-me: #4a8fd4;
+	--bubble-me-text: #fff;
+	--input-bg: #2e2e55;
+	--input-border: #3a3a5a;
+}
+
+/* 字体尺寸 */
+body.font-small  { --font-scale: 0.875; }
+body.font-large  { --font-scale: 1.15; }
+
+body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	font-size: calc(14px * var(--font-scale));
+	background: var(--bg);
+	color: var(--text);
+	transition: background var(--transition-speed), color var(--transition-speed);
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; color: #333; }
 
 /* 导航栏 */
-.nav { background: #2b5f8a; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
-.nav a { color: #fff; text-decoration: none; margin-left: 16px; }
+.nav { background: var(--nav-bg); color: var(--nav-text); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+.nav a { color: var(--nav-text); text-decoration: none; margin-left: 16px; }
 .nav a:hover { text-decoration: underline; }
 .nav .user-info { display: flex; align-items: center; gap: 8px; }
 
 /* 登录页 */
-.login-box { width: 360px; margin: 80px auto; background: #fff; padding: 40px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
-.login-box h1 { text-align: center; margin-bottom: 24px; color: #2b5f8a; }
-.login-box input { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-.login-box button { width: 100%; padding: 10px; background: #2b5f8a; color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
-.login-box button:hover { background: #1e4a6e; }
-.login-box .toggle { text-align: center; margin-top: 12px; color: #2b5f8a; cursor: pointer; }
+.login-box { width: 360px; margin: 80px auto; background: var(--surface); padding: 40px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+.login-box h1 { text-align: center; margin-bottom: 24px; color: var(--primary); }
+.login-box input { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; background: var(--input-bg); color: var(--text); }
+.login-box button { width: 100%; padding: 10px; background: var(--primary); color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+.login-box button:hover { background: var(--primary-hover); }
+.login-box .toggle { text-align: center; margin-top: 12px; color: var(--primary); cursor: pointer; }
 .login-box .toggle:hover { text-decoration: underline; }
 
 /* 容器 */
 .container { max-width: 1000px; margin: 20px auto; padding: 0 20px; }
 
 /* 联系人列表 */
-.contact-list { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
-.contact-item { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
-.contact-item:hover { background: #f5f7fa; }
-.contact-item .avatar { width: 40px; height: 40px; border-radius: 50%; background: #2b5f8a; color: #fff; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 16px; }
+.contact-list { background: var(--surface); border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+.contact-item { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid var(--border-light); cursor: pointer; }
+.contact-item:hover { background: var(--surface-hover); }
+.contact-item .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 16px; }
 .contact-item .info { flex: 1; }
 .contact-item .name { font-weight: 500; }
-.contact-item .remark { font-size: 12px; color: #888; }
+.contact-item .remark { font-size: 12px; color: var(--text-muted); }
 
 /* 聊天窗口 */
-.chat-box { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: calc(100vh - 120px); }
-.chat-header { padding: 12px 16px; border-bottom: 1px solid #eee; font-weight: 500; }
+.chat-box { background: var(--surface); border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: calc(100vh - 120px); }
+.chat-header { padding: 12px 16px; border-bottom: 1px solid var(--border-light); font-weight: 500; }
 .chat-messages { flex: 1; overflow-y: auto; padding: 16px; }
 .chat-messages .msg { margin-bottom: 12px; display: flex; }
 .chat-messages .msg.from-me { justify-content: flex-end; }
-.chat-messages .msg .bubble { max-width: 70%; padding: 8px 14px; border-radius: 8px; background: #e8f4fd; }
-.chat-messages .msg.from-me .bubble { background: #2b5f8a; color: #fff; }
-.chat-messages .msg .meta { font-size: 11px; color: #999; margin-bottom: 4px; }
-.chat-input { padding: 12px; border-top: 1px solid #eee; display: flex; gap: 8px; }
-.chat-input input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; }
-.chat-input button { padding: 8px 20px; background: #2b5f8a; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+.chat-messages .msg .bubble { max-width: 70%; padding: 8px 14px; border-radius: 8px; background: var(--bubble-friend); }
+.chat-messages .msg.from-me .bubble { background: var(--bubble-me); color: var(--bubble-me-text); }
+.chat-messages .msg .meta { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.chat-input { padding: 12px; border-top: 1px solid var(--border-light); display: flex; gap: 8px; }
+.chat-input input { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--input-bg); color: var(--text); }
+.chat-input button { padding: 8px 20px; background: var(--primary); color: #fff; border: none; border-radius: 4px; cursor: pointer; }
 
 /* 通用 */
 .btn { padding: 6px 14px; border-radius: 4px; cursor: pointer; border: none; font-size: 13px; }
-.btn-primary { background: #2b5f8a; color: #fff; }
+.btn-primary { background: var(--primary); color: #fff; }
 .btn-danger { background: #e74c3c; color: #fff; }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 
 .section { margin-bottom: 20px; }
-.section h2 { font-size: 16px; margin-bottom: 10px; color: #555; }
+.section h2 { font-size: 16px; margin-bottom: 10px; color: var(--text-secondary); }
 
 .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; }
 .modal.show { display: flex; align-items: center; justify-content: center; }
-.modal-content { background: #fff; padding: 24px; border-radius: 8px; min-width: 300px; }
-.modal-content input, .modal-content select { width: 100%; padding: 8px; margin: 8px 0; border: 1px solid #ddd; border-radius: 4px; }
+.modal-content { background: var(--surface); padding: 24px; border-radius: 8px; min-width: 300px; }
+.modal-content input, .modal-content select { width: 100%; padding: 8px; margin: 8px 0; border: 1px solid var(--border); border-radius: 4px; background: var(--input-bg); color: var(--text); }
 .modal-content button { margin: 4px; }
 .error { color: #e74c3c; font-size: 13px; margin-top: 4px; }
 
 /* 个人信息页 */
-.profile-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+.profile-card { background: var(--surface); border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
 .profile-card p { margin: 10px 0; }
 .avatar-preview { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-left: 8px; }
 .form-group { margin-bottom: 12px; }
-.form-group label { display: block; margin-bottom: 4px; font-weight: 500; color: #555; }
-.form-group input { width: 100%; max-width: 400px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+.form-group label { display: block; margin-bottom: 4px; font-weight: 500; color: var(--text-secondary); }
+.form-group input { width: 100%; max-width: 400px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; background: var(--input-bg); color: var(--text); }
 .msg { font-size: 13px; margin-left: 10px; }
 .msg.success { color: #27ae60; }
 .msg.error { color: #e74c3c; }
@@ -83,15 +141,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .chat-sidebar {
 	width: 260px;
 	min-width: 260px;
-	background: #e9edf2;
+	background: var(--surface);
 	display: flex;
 	flex-direction: column;
-	border-right: 1px solid #d6dbe1;
+	border-right: 1px solid var(--border);
 }
 
 .sidebar-tabs {
 	display: flex;
-	border-bottom: 1px solid #d6dbe1;
+	border-bottom: 1px solid var(--border);
 }
 .sidebar-tabs .tab-btn {
 	flex: 1;
@@ -100,12 +158,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	background: transparent;
 	cursor: pointer;
 	font-size: 14px;
-	color: #666;
+	color: var(--text-secondary);
 	border-bottom: 2px solid transparent;
 }
 .sidebar-tabs .tab-btn.active {
-	color: #2b5f8a;
-	border-bottom-color: #2b5f8a;
+	color: var(--primary);
+	border-bottom-color: var(--primary);
 	font-weight: 600;
 }
 
@@ -118,15 +176,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	align-items: center;
 	padding: 10px 14px;
 	cursor: pointer;
-	border-bottom: 1px solid #e0e4e8;
+	border-bottom: 1px solid var(--border-light);
 }
-.sidebar-item:hover { background: #dce1e8; }
-.sidebar-item.active { background: #cdd5df; }
+.sidebar-item:hover { background: var(--surface-hover); }
+.sidebar-item.active { background: var(--surface-hover); }
 
 .sidebar-item .avatar {
 	width: 38px; height: 38px;
 	border-radius: 4px;
-	background: #2b5f8a; color: #fff;
+	background: var(--primary); color: #fff;
 	display: flex; align-items: center; justify-content: center;
 	font-size: 15px; font-weight: 600;
 	margin-right: 10px;
@@ -140,7 +198,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sidebar-item .item-preview {
-	font-size: 12px; color: #999;
+	font-size: 12px; color: var(--text-muted);
 	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 	margin-top: 2px;
 }
@@ -159,13 +217,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
-	background: #f5f6f7;
+	background: var(--bg);
 }
 
 .tab-bar {
 	display: flex;
-	background: #dce1e8;
-	border-bottom: 1px solid #cdd5df;
+	background: var(--surface);
+	border-bottom: 1px solid var(--border);
 	overflow-x: auto;
 	min-height: 34px;
 	align-items: flex-end;
@@ -174,8 +232,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	display: inline-flex;
 	align-items: center;
 	padding: 6px 12px;
-	background: #e9edf2;
-	border-right: 1px solid #d6dbe1;
+	background: var(--surface-hover);
+	border-right: 1px solid var(--border);
 	cursor: pointer;
 	font-size: 13px;
 	gap: 6px;
@@ -183,16 +241,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	max-width: 160px;
 	border-bottom: 2px solid transparent;
 }
-.tab-bar .chat-tab:hover { background: #f0f2f5; }
+.tab-bar .chat-tab:hover { background: var(--surface); }
 .tab-bar .chat-tab.active {
-	background: #f5f6f7;
-	border-bottom: 2px solid #2b5f8a;
+	background: var(--bg);
+	border-bottom: 2px solid var(--primary);
 }
 .tab-bar .chat-tab .tab-name {
 	overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tab-bar .chat-tab .tab-close {
-	font-size: 14px; color: #999; line-height: 1; cursor: pointer;
+	font-size: 14px; color: var(--text-muted); line-height: 1; cursor: pointer;
 	flex-shrink: 0;
 }
 .tab-bar .chat-tab .tab-close:hover { color: #e74c3c; }
@@ -213,15 +271,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	top: 0; left: 0; right: 0; bottom: 0;
 	display: flex;
 	flex-direction: column;
-	background: #f5f6f7;
+	background: var(--bg);
 }
 .tab-panel.hidden { display: none; }
 
 .tab-panel .chat-header {
 	padding: 10px 16px;
-	border-bottom: 1px solid #e0e4e8;
+	border-bottom: 1px solid var(--border-light);
 	font-weight: 500;
-	background: #fff;
+	background: var(--surface);
+	color: var(--text);
 }
 .tab-panel .chat-messages {
 	flex: 1;
@@ -230,21 +289,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 }
 .tab-panel .chat-input {
 	padding: 10px 14px;
-	border-top: 1px solid #e0e4e8;
+	border-top: 1px solid var(--border-light);
 	display: flex;
 	gap: 8px;
-	background: #fff;
+	background: var(--surface);
 }
 .tab-panel .chat-input input {
 	flex: 1;
 	padding: 8px 12px;
-	border: 1px solid #ddd;
+	border: 1px solid var(--border);
 	border-radius: 4px;
 	font-size: 14px;
+	background: var(--input-bg);
+	color: var(--text);
 }
 .tab-panel .chat-input button {
 	padding: 8px 18px;
-	background: #2b5f8a;
+	background: var(--primary);
 	color: #fff;
 	border: none;
 	border-radius: 4px;
@@ -257,7 +318,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	align-items: center;
 	justify-content: center;
 	height: 100%;
-	color: #bbb;
+	color: var(--text-muted);
 	font-size: 15px;
 }
 
@@ -268,8 +329,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .group-panel {
 	width: 320px;
 	min-width: 320px;
-	background: #fff;
-	border-left: 1px solid #d6dbe1;
+	background: var(--surface);
+	border-left: 1px solid var(--border);
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
@@ -278,7 +339,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 
 .group-panel-tabs {
 	display: flex;
-	border-bottom: 1px solid #e0e4e8;
+	border-bottom: 1px solid var(--border-light);
 	flex-shrink: 0;
 }
 .group-panel-tabs .gp-tab-btn {
@@ -288,12 +349,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	background: transparent;
 	cursor: pointer;
 	font-size: 13px;
-	color: #666;
+	color: var(--text-secondary);
 	border-bottom: 2px solid transparent;
 }
 .group-panel-tabs .gp-tab-btn.active {
-	color: #2b5f8a;
-	border-bottom-color: #2b5f8a;
+	color: var(--primary);
+	border-bottom-color: var(--primary);
 	font-weight: 600;
 }
 
@@ -307,7 +368,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 }
 .group-panel-body .gp-section h3 {
 	font-size: 14px;
-	color: #555;
+	color: var(--text-secondary);
 	margin-bottom: 8px;
 }
 .group-panel-body .gp-row {
@@ -315,7 +376,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	justify-content: space-between;
 	align-items: center;
 	padding: 8px 0;
-	border-bottom: 1px solid #f0f0f0;
+	border-bottom: 1px solid var(--border-light);
 	font-size: 13px;
 }
 .gp-member-item {
@@ -323,7 +384,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	justify-content: space-between;
 	align-items: center;
 	padding: 8px 0;
-	border-bottom: 1px solid #f0f0f0;
+	border-bottom: 1px solid var(--border-light);
 	font-size: 13px;
 }
 .gp-member-item .member-info {
@@ -337,11 +398,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	border-radius: 3px;
 }
 .role-tag.owner { background: #e8a020; color: #fff; }
-.role-tag.admin { background: #2b5f8a; color: #fff; }
+.role-tag.admin { background: var(--primary); color: #fff; }
 .role-tag.member { background: #e0e0e0; color: #666; }
 .muted-tag { background: #e74c3c; color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 3px; }
 .announce-content {
-	background: #f9f9f9;
+	background: var(--surface-hover);
 	padding: 12px;
 	border-radius: 4px;
 	font-size: 13px;
@@ -355,25 +416,129 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 	cursor: pointer;
 	font-size: 12px;
 }
-.gp-btn-primary { background: #2b5f8a; color: #fff; }
+.gp-btn-primary { background: var(--primary); color: #fff; }
 .gp-btn-danger { background: #e74c3c; color: #fff; }
 .gp-btn-warn { background: #e8a020; color: #fff; }
 .gp-input {
 	width: 100%;
 	padding: 6px 8px;
-	border: 1px solid #ddd;
+	border: 1px solid var(--border);
 	border-radius: 3px;
 	font-size: 13px;
 	margin-top: 6px;
+	background: var(--input-bg);
+	color: var(--text);
 }
 .gp-textarea {
 	width: 100%;
 	padding: 8px;
-	border: 1px solid #ddd;
+	border: 1px solid var(--border);
 	border-radius: 3px;
 	font-size: 13px;
 	resize: vertical;
 	min-height: 80px;
 	margin-top: 6px;
+	background: var(--input-bg);
+	color: var(--text);
 }
 .gp-actions { margin-top: 8px; display: flex; gap: 6px; }
+
+/* ========================================
+   设置页面
+   ======================================== */
+
+.settings-layout {
+	max-width: 700px;
+	margin: 20px auto;
+	padding: 0 20px;
+}
+
+.settings-card {
+	background: var(--surface);
+	border-radius: 8px;
+	padding: 20px;
+	margin-bottom: 16px;
+	box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+	transition: background var(--transition-speed);
+}
+
+.settings-card h3 {
+	font-size: 15px;
+	color: var(--text);
+	margin-bottom: 14px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--border-light);
+}
+
+.setting-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--border-light);
+}
+.setting-row:last-child { border-bottom: none; }
+
+.setting-label {
+	font-size: 14px;
+	color: var(--text);
+}
+.setting-desc {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-top: 2px;
+}
+
+/* 开关样式 */
+.toggle-switch {
+	position: relative;
+	width: 44px;
+	height: 24px;
+	flex-shrink: 0;
+}
+.toggle-switch input {
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+.toggle-switch .slider {
+	position: absolute;
+	top: 0; left: 0; right: 0; bottom: 0;
+	background: #ccc;
+	border-radius: 24px;
+	cursor: pointer;
+	transition: background 0.2s;
+}
+.toggle-switch .slider::before {
+	content: "";
+	position: absolute;
+	height: 18px; width: 18px;
+	left: 3px; bottom: 3px;
+	background: #fff;
+	border-radius: 50%;
+	transition: transform 0.2s;
+}
+.toggle-switch input:checked + .slider {
+	background: var(--primary);
+}
+.toggle-switch input:checked + .slider::before {
+	transform: translateX(20px);
+}
+
+/* 下拉选择 */
+.setting-select {
+	padding: 6px 10px;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	font-size: 13px;
+	background: var(--input-bg);
+	color: var(--text);
+	min-width: 100px;
+}
+
+/* 关于信息 */
+.about-info p {
+	padding: 6px 0;
+	font-size: 13px;
+	color: var(--text-secondary);
+}

@@ -3,7 +3,53 @@
 // AI 用户由系统内部创建，不走正常注册流程
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+
+	"gorm.io/datatypes"
+)
+
+// UserSettings 用户偏好配置，以 JSON 形式存入 User.Settings 字段
+type UserSettings struct {
+	Theme        string `json:"theme"`          // "light" | "dark"
+	FontSize     string `json:"font_size"`      // "small" | "medium" | "large"
+	EnterToSend  bool   `json:"enter_to_send"`  // Enter 发送消息/换行
+	SoundEnabled bool   `json:"sound_enabled"`  // 消息提示音
+}
+
+// DefaultSettings 返回新建用户/未配置时的默认设置
+func DefaultSettings() *UserSettings {
+	return &UserSettings{
+		Theme:        "light",
+		FontSize:     "medium",
+		EnterToSend:  true,
+		SoundEnabled: true,
+	}
+}
+
+// ParseSettings 从 JSON 字段解析为 UserSettings，失败时返回默认值
+func ParseSettings(raw datatypes.JSON) *UserSettings {
+	s := DefaultSettings()
+	if raw == nil {
+		return s
+	}
+	if err := json.Unmarshal(raw, s); err != nil {
+		return DefaultSettings()
+	}
+	// 校验枚举值，非法值回退默认
+	switch s.Theme {
+	case "light", "dark":
+	default:
+		s.Theme = "light"
+	}
+	switch s.FontSize {
+	case "small", "medium", "large":
+	default:
+		s.FontSize = "medium"
+	}
+	return s
+}
 
 // User 用户模型
 type User struct {
@@ -21,6 +67,9 @@ type User struct {
 	AISystemPrompt string `gorm:"type:text;default:''" json:"ai_system_prompt,omitempty"`
 	// AIEndpoint 若为 AI 用户，其对应的 API 端点
 	AIEndpoint  string `gorm:"size:512;default:''" json:"ai_endpoint,omitempty"`
+
+	// Settings 用户配置（JSON）：主题、字体、聊天偏好、隐私等
+	Settings datatypes.JSON `gorm:"type:json" json:"settings"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
