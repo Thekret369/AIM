@@ -2,23 +2,24 @@
 
 /* ---- CSS 变量：主题与字体 ---- */
 :root {
-	--bg: #f0f2f5;
-	--surface: #fff;
-	--surface-hover: #f5f7fa;
-	--text: #333;
-	--text-secondary: #555;
-	--text-muted: #888;
-	--border: #ddd;
-	--border-light: #eee;
-	--nav-bg: #2b5f8a;
-	--nav-text: #fff;
-	--primary: #2b5f8a;
-	--primary-hover: #1e4a6e;
-	--bubble-friend: #e8f4fd;
-	--bubble-me: #2b5f8a;
-	--bubble-me-text: #fff;
-	--input-bg: #fff;
-	--input-border: #ddd;
+	/* 浅蓝色背景 + 白色卡片 */
+	--bg: #e8f0f8;
+	--surface: #ffffff;
+	--surface-hover: #f0f5fb;
+	--text: #1a1a2e;
+	--text-secondary: #4a5568;
+	--text-muted: #8899aa;
+	--border: #cddae6;
+	--border-light: #e2eaf2;
+	--nav-bg: #3b82c4;
+	--nav-text: #ffffff;
+	--primary: #4a90d9;
+	--primary-hover: #3b7cc4;
+	--bubble-friend: #e3eef8;
+	--bubble-me: #4a90d9;
+	--bubble-me-text: #ffffff;
+	--input-bg: #ffffff;
+	--input-border: #cddae6;
 	--font-scale: 1;
 
 	/* 过渡动画 */
@@ -27,23 +28,24 @@
 
 /* 深色主题 */
 body.theme-dark {
-	--bg: #1a1a2e;
-	--surface: #252545;
-	--surface-hover: #2e2e55;
+	/* 纯黑底色 + 黑灰卡片 */
+	--bg: #0f0f0f;
+	--surface: #1c1c1c;
+	--surface-hover: #282828;
 	--text: #e0e0e0;
-	--text-secondary: #b0b0c0;
-	--text-muted: #888;
-	--border: #3a3a5a;
-	--border-light: #2a2a4a;
-	--nav-bg: #151530;
-	--nav-text: #e0e0e0;
-	--primary: #4a8fd4;
-	--primary-hover: #3a7bc4;
-	--bubble-friend: #2e2e55;
-	--bubble-me: #4a8fd4;
-	--bubble-me-text: #fff;
-	--input-bg: #2e2e55;
-	--input-border: #3a3a5a;
+	--text-secondary: #aaaaaa;
+	--text-muted: #707070;
+	--border: #333333;
+	--border-light: #252525;
+	--nav-bg: #060606;
+	--nav-text: #cccccc;
+	--primary: #606060;
+	--primary-hover: #787878;
+	--bubble-friend: #2a2a2a;
+	--bubble-me: #555555;
+	--bubble-me-text: #ffffff;
+	--input-bg: #252525;
+	--input-border: #3a3a3a;
 }
 
 /* 字体尺寸 */
