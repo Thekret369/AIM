@@ -28,6 +28,8 @@ type Message struct {
 	Content    string      `gorm:"type:text" json:"content"`            // 文本内容或文件 URL
 	FileName   string      `gorm:"size:256" json:"file_name,omitempty"` // 文件/图片/音频的原文件名
 	FileSize   int64       `json:"file_size,omitempty"`                 // 文件大小(字节)
+	// ThumbnailURL 缩略图 URL（仅图片消息）
+	ThumbnailURL string `gorm:"size:512" json:"thumbnail_url,omitempty"`
 	// Mentions 被 @ 的用户 ID 列表，JSON 数组如 "[1,3,5]"
 	Mentions   string    `gorm:"size:512" json:"mentions,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
