@@ -15,6 +15,7 @@ import (
 	"AIM/internal/model"
 	"AIM/internal/service"
 	"AIM/internal/ws"
+	"AIM/pkg/storage"
 
 	"github.com/gin-gonic/gin"
 )
@@ -62,12 +63,17 @@ func main() {
 	chatH := &handler.ChatHandler{Svc: chatSvc, Hub: hub, JWTSecret: cfg.JWT.Secret}
 	settingsH := &handler.SettingsHandler{Svc: settingsSvc}
 
+	// 初始化文件上传器
+	uploader := storage.NewLocalUploader("./data/uploads")
+	uploadH := &handler.UploadHandler{Uploader: uploader}
+
 	// 配置 Gin 路由
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
 	// 静态文件与模板
 	r.Static("/static", "./web/static")
+	r.Static("/data/uploads", "./data/uploads")
 	r.LoadHTMLGlob("web/templates/*")
 
 	// 登录注册页面
@@ -135,7 +141,10 @@ func main() {
 		auth.GET("/settings", settingsH.Get)
 		auth.PUT("/settings", settingsH.Update)
 
-		// 消息历史
+		// 文件上传
+			auth.POST("/upload", uploadH.HandleUpload)
+
+			// 消息历史
 		auth.GET("/history", chatH.GetHistory)
 		auth.GET("/history/group/:id", chatH.GetGroupHistory)
 		auth.GET("/history/broadcast", chatH.GetBroadcastHistory)
