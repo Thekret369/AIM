@@ -27,6 +27,7 @@ var allowedMimePrefixes = []string{
 	"application/zip",
 	"application/x-rar",
 	"application/x-7z",
+	"application/octet-stream",
 	"text/",
 }
 
