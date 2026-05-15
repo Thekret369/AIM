@@ -215,6 +215,26 @@ func (h *Hub) SendTypingToUsers(userIDs []uint, payload *TypingPayload) {
 	}
 }
 
+// SendReadReceiptToUsers 向群成员广播已读回执
+func (h *Hub) SendReadReceiptToUsers(userIDs []uint, payload *ReadReceiptPayload) {
+	data, _ := json.Marshal(WSMessage{
+		Type:    WSMReadReceipt,
+		Payload: mustMarshal(payload),
+	})
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, uid := range userIDs {
+		if clients, ok := h.clients[uid]; ok {
+			for client := range clients {
+				select {
+				case client.send <- data:
+				default:
+				}
+			}
+		}
+	}
+}
+
 // SendReadReceipt 向目标用户发送已读回执
 func (h *Hub) SendReadReceipt(toUserID uint, payload *ReadReceiptPayload) {
 	h.mu.RLock()
