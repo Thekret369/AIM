@@ -71,6 +71,7 @@
 </div>
 
 <script src="/static/app.js"></script>
+<script src="/static/chat-ext.js"></script>
 <script>
 checkAuth();
 
@@ -372,6 +373,7 @@ function createTab(key, type, targetId, name) {
         panelEl: panelEl, messagesEl: panelMessagesEl,
         inputEl: inputEl, headerEl: headerEl, tabEl: tabEl
     });
+    augmentTab(key, chatTabs.get(key));
 
     if (type === 'group') {
         headerEl.querySelector('button').addEventListener('click', function(e) {
@@ -393,6 +395,8 @@ function switchToTab(key) {
     document.querySelectorAll('.sidebar-item').forEach(function(el) {
         el.classList.toggle('active', el.dataset.key === key);
     });
+    updateOnlineDots();
+    sendReadReceiptForTab(key);
     var panel = document.getElementById('groupPanel');
     if (!panel.classList.contains('hidden')) {
         if (tab.type === 'group') { currentGroupPanelKey = key; loadGroupPanel(key); }
@@ -841,6 +845,9 @@ onMessage = function(msg) {
     } else { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); }
 
     updateSidebarBadge(key);
+    if (key === activeTabKey && msg.from_user_id !== getUserId()) {
+        sendReadReceiptForTab(key);
+    }
 };
 
 // ========================================
@@ -1073,6 +1080,8 @@ function sendMessage(key) {
 
     sendWS(msg);
     tab.inputEl.value = '';
+    if (tab.type === 'user') sendTyping(tab.targetId, 0, false);
+    else if (tab.type === 'group') sendTyping(0, tab.targetId, false);
 };
 
 // ========================================

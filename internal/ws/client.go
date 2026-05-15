@@ -12,11 +12,11 @@ import (
 
 // 读写超时和缓冲区大小
 const (
-	writeWait      = 10 * time.Second    // 写超时
-	pongWait       = 60 * time.Second    // 等待 Pong 超时
-	pingPeriod     = 54 * time.Second    // Ping 间隔（需小于 pongWait）
-	maxMessageSize = 65536               // 最大消息大小 64KB
-	sendBufSize    = 256                 // 发送缓冲区
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = 54 * time.Second
+	maxMessageSize = 65536
+	sendBufSize    = 256
 )
 
 // Client 表示单个 WebSocket 连接
@@ -25,7 +25,7 @@ type Client struct {
 	Username string
 	Hub      *Hub
 	Conn     *websocket.Conn
-	send     chan []byte // 发送缓冲区
+	send     chan []byte
 }
 
 // NewClient 创建客户端实例并注册到 Hub
@@ -47,7 +47,7 @@ func (c *Client) Start() {
 	go c.readPump()
 }
 
-// readPump 从 WebSocket 读取消息，解析后通过 ChatService 分发
+// readPump 从 WebSocket 读取消息，按 type 分发到对应通道
 func (c *Client) readPump() {
 	defer func() {
 		c.Hub.Unregister(c)
@@ -70,15 +70,51 @@ func (c *Client) readPump() {
 			break
 		}
 
-		var msg model.Message
-		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("[ws] 消息解析失败: %v", err)
+		// 先尝试解析外层 WSMessage 包装
+		var wrapper WSMessage
+		if err := json.Unmarshal(data, &wrapper); err != nil || wrapper.Type == "" {
+			// 兼容旧协议：无 type 字段则视为 chat 消息
+			var msg model.Message
+			if err := json.Unmarshal(data, &msg); err != nil {
+				log.Printf("[ws] 消息解析失败: %v", err)
+				continue
+			}
+			msg.FromUserID = c.UserID
+			c.Hub.OnMessage <- &msg
 			continue
 		}
 
-		// 强制设置发送者为本连接用户，防止伪造
-		msg.FromUserID = c.UserID
-		c.Hub.OnMessage <- &msg
+		switch wrapper.Type {
+		case WSMChat:
+			var msg model.Message
+			if err := json.Unmarshal(wrapper.Payload, &msg); err != nil {
+				log.Printf("[ws] chat 解析失败: %v", err)
+				continue
+			}
+			msg.FromUserID = c.UserID
+			c.Hub.OnMessage <- &msg
+
+		case WSMTyping:
+			var p TypingPayload
+			if err := json.Unmarshal(wrapper.Payload, &p); err != nil {
+				log.Printf("[ws] typing 解析失败: %v", err)
+				continue
+			}
+			p.FromUserID = c.UserID
+			c.Hub.OnTyping <- &p
+
+		case WSMReadReceipt:
+			var p ReadReceiptPayload
+			if err := json.Unmarshal(wrapper.Payload, &p); err != nil {
+				log.Printf("[ws] read_receipt 解析失败: %v", err)
+				continue
+			}
+			p.FromUserID = c.UserID
+			c.Hub.OnReadReceipt <- &p
+
+		default:
+			log.Printf("[ws] 未知消息类型: %s", wrapper.Type)
+		}
 	}
 }
 

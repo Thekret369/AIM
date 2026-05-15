@@ -10,8 +10,62 @@ import (
 
 // ChatService 消息服务
 // 依赖 ws.Hub 将消息实时推送到目标用户的 WebSocket 连接
+// 同时处理输入状态路由和已读回执
 type ChatService struct {
 	Hub *ws.Hub
+}
+
+// MarkRead 标记消息已读，更新 MessageRead 表，并通知消息发送者
+func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
+	if len(p.MessageIDs) == 0 {
+		return
+	}
+	// 取最后一条消息 ID 作为已读位置
+	lastMsgID := p.MessageIDs[len(p.MessageIDs)-1]
+
+	// 查询这些消息以确定会话类型
+	var msg model.Message
+	if err := model.DB.First(&msg, p.MessageIDs[0]).Error; err != nil {
+		return
+	}
+
+	var peerUserID, groupID *uint
+	if msg.IsToUser() {
+		peerUserID = &msg.FromUserID
+	} else if msg.IsToGroup() {
+		groupID = msg.GroupID
+	}
+
+	// UPSERT 已读记录
+	read := model.MessageRead{
+		UserID:        p.FromUserID,
+		PeerUserID:    peerUserID,
+		GroupID:       groupID,
+		LastReadMsgID: lastMsgID,
+	}
+	model.DB.Where("user_id = ? AND peer_user_id = ? AND group_id = ?",
+		p.FromUserID, peerUserID, groupID).
+		Assign(&read).
+		FirstOrCreate(&read)
+
+	// 通知消息发送者
+	if peerUserID != nil {
+		s.Hub.SendReadReceipt(*peerUserID, p)
+	}
+}
+
+// HandleTyping 路由输入状态给对方/群成员
+func (s *ChatService) HandleTyping(p *ws.TypingPayload) {
+	if p.GroupID > 0 {
+		// 群聊：广播给群内成员（排除自己）
+		var memberIDs []uint
+		model.DB.Model(&model.GroupMember{}).
+			Where("group_id = ?", p.GroupID).
+			Pluck("user_id", &memberIDs)
+		s.Hub.SendTypingToUsers(memberIDs, p)
+	} else if p.ToUserID > 0 {
+		s.Hub.SendTyping(p.ToUserID, p)
+	}
 }
 
 // Send 发送消息并持久化到数据库，然后通过 Hub 推送到客户端

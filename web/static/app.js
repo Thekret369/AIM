@@ -72,18 +72,22 @@ async function api(method, path, body) {
 }
 
 // ========================================
-// WebSocket 连接
+// WebSocket 连接 — 支持 chat/typing/read_receipt/status 四种消息类型
 // ========================================
 
 let ws = null;
-let onMessage = null;  // 回调: function(msg)
+let onMessage = null;       // 回调: function(msg)  — chat 消息（已解包）
+let onTyping = null;        // 回调: function(payload)
+let onReadReceipt = null;   // 回调: function(payload)
+let onStatus = null;        // 回调: function(payload)
+let onlineUsers = new Set(); // 在线用户 ID 集合
 
 function connectWS() {
-    const token = getToken();
+    var token = getToken();
     if (!token) return;
 
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = proto + '//' + window.location.host + '/ws?token=' + token;
+    var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var url = proto + '//' + window.location.host + '/ws?token=' + token;
 
     ws = new WebSocket(url);
 
@@ -93,14 +97,35 @@ function connectWS() {
 
     ws.onmessage = function(evt) {
         try {
-            const msg = JSON.parse(evt.data);
-            if (msg.from_user_id !== getUserId()) {
-                // 免打扰群中除非被 @ 否则抑制提示音
-                if (!window.__suppressSound || !window.__suppressSound(msg)) {
-                    playMessageSound();
+            var raw = JSON.parse(evt.data);
+            var type = raw.type || 'chat'; // 兼容旧协议：无 type 视为 chat
+            var payload = raw.payload || raw; // 兼容旧协议：无 wrapper 时直接当 message
+
+            switch (type) {
+            case 'chat':
+                var msg = raw.payload ? payload : raw;
+                if (msg.from_user_id !== getUserId()) {
+                    if (!window.__suppressSound || !window.__suppressSound(msg)) {
+                        playMessageSound();
+                    }
                 }
+                if (onMessage) onMessage(msg);
+                break;
+            case 'typing':
+                if (onTyping) onTyping(payload);
+                break;
+            case 'read_receipt':
+                if (onReadReceipt) onReadReceipt(payload);
+                break;
+            case 'status':
+                if (payload.is_online) {
+                    onlineUsers.add(payload.user_id);
+                } else {
+                    onlineUsers.delete(payload.user_id);
+                }
+                if (onStatus) onStatus(payload);
+                break;
             }
-            if (onMessage) onMessage(msg);
         } catch(e) {
             console.error('[ws] 解析失败:', e);
         }
@@ -108,6 +133,7 @@ function connectWS() {
 
     ws.onclose = function() {
         console.log('[ws] 已断开，5 秒后重连...');
+        onlineUsers.clear();
         setTimeout(connectWS, 5000);
     };
 
@@ -116,14 +142,49 @@ function connectWS() {
     };
 }
 
-function sendWS(msg) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(msg));
+// sendWS 统一封装：sendWS(msg) → chat；sendWS(type, payload) → 指定类型
+function sendWS(type, payload) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (arguments.length === 1) {
+        ws.send(JSON.stringify({ type: 'chat', payload: type }));
+    } else {
+        ws.send(JSON.stringify({ type: type, payload: payload }));
     }
 }
 
 function closeWS() {
     if (ws) ws.close();
+}
+
+// ========================================
+// 输入状态发送工具（500ms 节流）
+// ========================================
+var _typingTimers = {};
+function sendTyping(peerId, groupId, isTyping) {
+    var key = groupId ? ('group:' + groupId) : ('user:' + peerId);
+    if (isTyping) {
+        if (_typingTimers[key]) return; // 已在节流期间
+        _typingTimers[key] = setTimeout(function() {
+            delete _typingTimers[key];
+            sendWS('typing', { to_user_id: peerId || 0, group_id: groupId || 0, is_typing: false });
+        }, 3000); // 3 秒后自动停止
+        sendWS('typing', { to_user_id: peerId || 0, group_id: groupId || 0, is_typing: true });
+    } else {
+        if (_typingTimers[key]) { clearTimeout(_typingTimers[key]); delete _typingTimers[key]; }
+        sendWS('typing', { to_user_id: peerId || 0, group_id: groupId || 0, is_typing: false });
+    }
+}
+
+// ========================================
+// 已读回执发送
+// ========================================
+function sendReadReceipt(peerUserId, groupId, messageIds) {
+    if (!messageIds || messageIds.length === 0) return;
+    sendWS('read_receipt', {
+        peer_user_id: peerUserId || 0,
+        group_id: groupId || 0,
+        message_ids: messageIds
+    });
 }
 
 // ========================================

@@ -35,6 +35,16 @@ type Message struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// MessageRead 消息已读记录，联合唯一约束防止重复标记
+// 用户在某会话（单聊/群聊）中已读的最后一条消息 ID
+type MessageRead struct {
+	ID          uint   `gorm:"primaryKey" json:"id"`
+	UserID      uint   `gorm:"uniqueIndex:idx_read;not null" json:"user_id"`
+	PeerUserID  *uint  `gorm:"uniqueIndex:idx_read" json:"peer_user_id,omitempty"` // 单聊对方
+	GroupID     *uint  `gorm:"uniqueIndex:idx_read" json:"group_id,omitempty"`      // 群聊
+	LastReadMsgID uint `gorm:"not null" json:"last_read_msg_id"`                   // 已读到的最后一条消息 ID
+}
+
 // IsToUser 是否为发给特定用户的单聊消息
 func (m *Message) IsToUser() bool {
 	return m.ToUserID != nil
