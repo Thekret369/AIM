@@ -926,6 +926,12 @@ function renderAllMessages(tab) {
     tab.messagesEl.innerHTML = html;
 }
 
+// 劫持 renderOneMessage 注入已读标记（同步，消除 chat-ext.js 的 setTimeout 竞态）
+if (typeof enhancedRenderOneMessage === 'function' && renderOneMessage !== enhancedRenderOneMessage) {
+    _origRenderOneMessage = renderOneMessage;
+    renderOneMessage = enhancedRenderOneMessage;
+}
+
 // ========================================
 // 附件上传 & 录音
 // ========================================
