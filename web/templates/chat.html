@@ -858,7 +858,19 @@ onMessage = function(msg) {
 // ========================================
 // 消息渲染
 // ========================================
-function renderOneMessage(msg) {
+function formatMsgTime(createdAt) {
+	    if (!createdAt) return '';
+	    var d = new Date(createdAt);
+	    var now = new Date();
+	    var time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+	    var sameDay = d.getFullYear() === now.getFullYear() &&
+	                  d.getMonth() === now.getMonth() &&
+	                  d.getDate() === now.getDate();
+	    if (sameDay) return time;
+	    return (d.getMonth() + 1) + '-' + d.getDate() + ' ' + time;
+	}
+
+	function renderOneMessage(msg) {
     var isMe = msg.from_user_id === getUserId();
     var cls = isMe ? 'from-me' : '';
     var name = msg.from_user ? (msg.from_user.nickname || msg.from_user.username) : ('用户' + msg.from_user_id);
@@ -884,10 +896,12 @@ function renderOneMessage(msg) {
         default:
             body = escapeHtml(msg.content);
     }
+    var timeStr = formatMsgTime(msg.created_at);
     return '<div class="msg ' + cls + '">' +
         '<div class="bubble">' +
             '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" style="color:var(--link-color)">' + escapeHtml(name) + '</a></div>' +
             body +
+            (timeStr ? '<div class="msg-time">' + timeStr + '</div>' : '') +
         '</div>' +
     '</div>';
 }
