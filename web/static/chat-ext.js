@@ -43,7 +43,7 @@ function enhancedRenderOneMessage(msg) {
 
     // 群聊：所有消息都显示已读扇形图（不仅限于自己发的）
     if (isGroup) {
-        return html.replace('</div>', renderReadPie(msg) + '</div>');
+        return html.replace('</div>', renderReadPie(msg, tab) + '</div>');
     }
     // 单聊：仅自己发的消息显示已读/未读
     if (!isMe) return html;
@@ -54,10 +54,9 @@ function enhancedRenderOneMessage(msg) {
 }
 
 // renderReadPie 生成扇形图 HTML（仅群聊）
-function renderReadPie(msg) {
+function renderReadPie(msg, tab) {
     var readSet = messageReadBy.get(msg.id);
     var readCount = readSet ? readSet.size : 0;
-    var tab = chatTabs.get(activeTabKey);
     var members = groupMembersMap.get(tab ? tab.targetId : 0) || [];
     // 排除消息发送者（发送者自己不能已读自己的消息）
     var total = members.length - 1;
@@ -72,13 +71,7 @@ function renderReadPie(msg) {
         '<span class="read-count" style="font-size:10px;color:#666;margin-left:2px">' + readCount + '/' + total + '</span>';
 }
 
-// 延迟劫持
-setTimeout(function() {
-    if (typeof renderOneMessage === 'function') {
-        _origRenderOneMessage = renderOneMessage;
-        renderOneMessage = enhancedRenderOneMessage;
-    }
-}, 100);
+// renderOneMessage 劫持已移至 chat.html 同步执行，消除 100ms 竞态
 
 // ========================================
 // 输入状态回调
