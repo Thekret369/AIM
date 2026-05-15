@@ -5,12 +5,14 @@ import (
 	"strconv"
 
 	"AIM/internal/service"
+	"AIM/internal/ws"
 
 	"github.com/gin-gonic/gin"
 )
 
 type FriendHandler struct {
 	Svc *service.FriendService
+	Hub *ws.Hub
 }
 
 // AddFriend 发送好友申请
@@ -110,6 +112,39 @@ func (h *FriendHandler) FriendList(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"friends": list})
+}
+
+// GetOnlineFriends 返回所有在线好友的 ID 列表
+func (h *FriendHandler) GetOnlineFriends(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	friends, err := h.Svc.FriendList(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	onlineSet := make(map[uint]bool)
+	for _, uid := range h.Hub.GetOnlineUserIDs() {
+		onlineSet[uid] = true
+	}
+
+	type OnlineFriend struct {
+		ID       uint   `json:"id"`
+		Username string `json:"username"`
+		Nickname string `json:"nickname"`
+		IsOnline bool   `json:"is_online"`
+	}
+	var result []OnlineFriend
+	for _, f := range friends {
+		result = append(result, OnlineFriend{
+			ID:       f.FriendID,
+			Username: f.Username,
+			Nickname: f.Nickname,
+			IsOnline: onlineSet[f.FriendID],
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"friends": result})
 }
 
 // PendingRequests 获取待处理申请

@@ -29,6 +29,7 @@ func InitDB(dsn string) error {
 		&Group{},
 		&GroupMember{},
 		&Announcement{},
+		&MessageRead{},
 	)
 	if err != nil {
 		return err
