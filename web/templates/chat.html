@@ -1194,6 +1194,8 @@ async function loadHistory(key, page) {
         if (page === 1) tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
         else { var oldH = tab.messagesEl.scrollHeight; tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight - oldH; }
 
+        // 消息加载完成后发送已读回执（switchToTab 时 tab.messages 尚为空）
+        sendReadReceiptForTab(key);
         if (tab.type === 'group' && typeof loadGroupReads === 'function' && tab.targetId) loadGroupReads(tab.targetId, tab);
         tab.historyPage = page + 1;
         if (data.messages.length < (afterID ? 50 : 30)) tab.hasMore = false;
