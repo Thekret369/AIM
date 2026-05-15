@@ -1100,6 +1100,18 @@ async function loadHistory(key, page) {
         tab._loading = false;
         if (!data.messages || data.messages.length === 0) { tab.hasMore = false; return; }
         var newMsgs = data.messages.reverse();
+        // 根据服务端 read_info 恢复已读标记
+        if (data.read_info) {
+            var info = data.read_info;
+            var myId = getUserId();
+            newMsgs.forEach(function(m) {
+                if (m.from_user_id === myId && info.peer_last_read && m.id <= info.peer_last_read) {
+                    m._read = true;
+                } else if (m.from_user_id !== myId && info.my_last_read && m.id <= info.my_last_read) {
+                    m._read = true;
+                }
+            });
+        }
         if (page === 1) { tab.messages = newMsgs; renderAllMessages(tab); tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight; }
         else { var oldH = tab.messagesEl.scrollHeight; tab.messages = newMsgs.concat(tab.messages); renderAllMessages(tab); tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight - oldH; }
         tab.historyPage = page + 1;
@@ -1126,10 +1138,23 @@ function escapeHtml(s) {
 }
 
 // ========================================
+// 在线状态加载
+// ========================================
+async function loadOnlineStatus() {
+    try {
+        var data = await api('GET', '/friends/online');
+        (data.friends || []).forEach(function(f) {
+            if (f.is_online) onlineUsers.add(f.id);
+        });
+        updateOnlineDots();
+    } catch(e) {}
+}
+
+// ========================================
 // 初始化
 // ========================================
 async function init() {
-    await Promise.all([loadFriends(), loadGroups()]);
+    await Promise.all([loadFriends(), loadGroups(), loadOnlineStatus()]);
     await loadGroupMetadata();
     buildConversations();
     await loadLastMessages();
