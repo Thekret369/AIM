@@ -35,16 +35,18 @@ func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
 		groupID = msg.GroupID
 	}
 
-	read := model.MessageRead{
-		UserID:        p.FromUserID,
-		PeerUserID:    peerUserID,
-		GroupID:       groupID,
-		LastReadMsgID: lastMsgID,
+	// UPSERT：已存在则更新 LastReadMsgID（取较大值），不存在则创建
+	existing := model.MessageRead{}
+	err := model.DB.Where("user_id = ? AND peer_user_id = ? AND group_id = ?",
+		p.FromUserID, peerUserID, groupID).First(&existing).Error
+	if err != nil {
+		model.DB.Create(&model.MessageRead{
+			UserID: p.FromUserID, PeerUserID: peerUserID, GroupID: groupID,
+			LastReadMsgID: lastMsgID,
+		})
+	} else if lastMsgID > existing.LastReadMsgID {
+		model.DB.Model(&existing).Update("last_read_msg_id", lastMsgID)
 	}
-	model.DB.Where("user_id = ? AND peer_user_id = ? AND group_id = ?",
-		p.FromUserID, peerUserID, groupID).
-		Assign(&read).
-		FirstOrCreate(&read)
 
 	if peerUserID != nil {
 		s.Hub.SendReadReceipt(*peerUserID, p)
@@ -173,6 +175,20 @@ func (s *ChatService) GetReadInfo(userID, peerID uint, groupID *uint) ReadInfo {
 		info.PeerLastRead = peerRead.LastReadMsgID
 	}
 	return info
+}
+
+// GetGroupReads 返回群内各用户最后已读消息 ID，前端用于重建已读扇形图
+// 返回 map[userID]lastReadMsgID，不包含查询者本人（pie 图排除发送者）
+func (s *ChatService) GetGroupReads(groupID uint) (map[uint]uint, error) {
+	var reads []model.MessageRead
+	if err := model.DB.Where("group_id = ?", groupID).Find(&reads).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[uint]uint)
+	for _, r := range reads {
+		result[r.UserID] = r.LastReadMsgID
+	}
+	return result, nil
 }
 
 // GetBroadcastHistory 拉取广播消息记录
