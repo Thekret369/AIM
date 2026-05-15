@@ -66,7 +66,8 @@ func (h *ChatHandler) GetHistory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"messages": msgs, "total": total})
+	info := h.Svc.GetReadInfo(userID, uint(peerID), nil)
+	c.JSON(http.StatusOK, gin.H{"messages": msgs, "total": total, "read_info": info})
 }
 
 // GetGroupHistory 获取群聊历史消息
@@ -86,7 +87,9 @@ func (h *ChatHandler) GetGroupHistory(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"messages": msgs, "total": total})
+	gid := uint(groupID)
+	info := h.Svc.GetReadInfo(userID, 0, &gid)
+	c.JSON(http.StatusOK, gin.H{"messages": msgs, "total": total, "read_info": info})
 }
 
 // GetBroadcastHistory 获取广播消息历史

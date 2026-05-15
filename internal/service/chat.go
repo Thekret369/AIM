@@ -151,6 +151,30 @@ func (s *ChatService) GetGroupHistory(userID, groupID uint, page, pageSize int) 
 	return msgs, total, nil
 }
 
+// ReadInfo 会话已读信息
+type ReadInfo struct {
+	MyLastRead   uint `json:"my_last_read"`   // 我读到的最后一条对方消息 ID
+	PeerLastRead uint `json:"peer_last_read"` // 对方读到的最后一条我的消息 ID（仅单聊）
+}
+
+// GetReadInfo 获取用户在指定会话中的已读位置
+func (s *ChatService) GetReadInfo(userID, peerID uint, groupID *uint) ReadInfo {
+	var info ReadInfo
+	if groupID != nil {
+		var r model.MessageRead
+		model.DB.Where("user_id = ? AND group_id = ?", userID, *groupID).First(&r)
+		info.MyLastRead = r.LastReadMsgID
+	} else {
+		var myRead model.MessageRead
+		model.DB.Where("user_id = ? AND peer_user_id = ?", userID, peerID).First(&myRead)
+		info.MyLastRead = myRead.LastReadMsgID
+		var peerRead model.MessageRead
+		model.DB.Where("user_id = ? AND peer_user_id = ?", peerID, userID).First(&peerRead)
+		info.PeerLastRead = peerRead.LastReadMsgID
+	}
+	return info
+}
+
 // GetBroadcastHistory 拉取广播消息记录
 func (s *ChatService) GetBroadcastHistory(page, pageSize int) ([]model.Message, int64, error) {
 	var msgs []model.Message
