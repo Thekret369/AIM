@@ -897,13 +897,15 @@ function formatMsgTime(createdAt) {
             body = escapeHtml(msg.content);
     }
     var timeStr = formatMsgTime(msg.created_at);
-    return '<div class="msg ' + cls + '">' +
+    var html = '<div class="msg ' + cls + '">' +
         '<div class="bubble">' +
             '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" style="color:var(--link-color)">' + escapeHtml(name) + '</a>' +
             (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + '</div>' +
             body +
         '</div>' +
     '</div>';
+    if (typeof injectReadMark === 'function') html = injectReadMark(html, msg);
+    return html;
 }
 
 function formatFileSize(bytes) {
@@ -924,12 +926,6 @@ function renderAllMessages(tab) {
     var html = '';
     for (var i = 0; i < tab.messages.length; i++) html += renderOneMessage(tab.messages[i]);
     tab.messagesEl.innerHTML = html;
-}
-
-// 劫持 renderOneMessage 注入已读标记（同步，消除 chat-ext.js 的 setTimeout 竞态）
-if (typeof enhancedRenderOneMessage === 'function' && renderOneMessage !== enhancedRenderOneMessage) {
-    _origRenderOneMessage = renderOneMessage;
-    renderOneMessage = enhancedRenderOneMessage;
 }
 
 // ========================================
