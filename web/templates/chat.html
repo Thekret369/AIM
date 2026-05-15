@@ -71,6 +71,7 @@
 </div>
 
 <script src="/static/app.js"></script>
+<script src="/static/msgstore.js"></script>
 <script src="/static/chat-ext.js"></script>
 <script>
 checkAuth();
@@ -844,6 +845,10 @@ onMessage = function(msg) {
         } else { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); updateTabBadge(key); }
     } else { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); }
 
+    // 写入本地 IndexedDB
+    msgStore.putMessage(key, msg);
+    msgStore.setLastMsgID(key, msg.id);
+
     updateSidebarBadge(key);
     if (key === activeTabKey && msg.from_user_id !== getUserId()) {
         sendReadReceiptForTab(key);
@@ -1091,20 +1096,57 @@ async function loadHistory(key, page) {
     var tab = chatTabs.get(key);
     if (!tab) return;
     page = page || 1;
-    var url;
-    if (tab.type === 'user') url = '/history?peer_id=' + tab.targetId + '&page=' + page + '&page_size=30';
-    else if (tab.type === 'group') url = '/history/group/' + tab.targetId + '?page=' + page + '&page_size=30';
-    else url = '/history/broadcast?page=' + page + '&page_size=30';
+
+    // 初始加载：先从本地 IndexedDB 瞬时渲染
+    if (page === 1 && !tab._localLoaded) {
+        tab._localLoaded = true;
+        try {
+            var cached = await msgStore.getMessages(key);
+            if (cached.length > 0) {
+                tab.messages = cached;
+                renderAllMessages(tab);
+                tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
+            }
+        } catch(e) {}
+    }
+
+    // 构建 URL，有本地缓存时用 after_id 增量同步
+    var url, afterID = 0;
+    if (tab.type === 'user') {
+        url = '/history?peer_id=' + tab.targetId;
+        if (page === 1) {
+            try { afterID = await msgStore.getLastMsgID(key); } catch(e) {}
+            if (afterID) url += '&after_id=' + afterID + '&page_size=50';
+            else url += '&page=' + page + '&page_size=30';
+        } else {
+            url += '&page=' + page + '&page_size=30';
+        }
+    } else if (tab.type === 'group') {
+        url = '/history/group/' + tab.targetId;
+        if (page === 1) {
+            try { afterID = await msgStore.getLastMsgID(key); } catch(e) {}
+            if (afterID) url += '?after_id=' + afterID + '&page_size=50';
+            else url += '?page=' + page + '&page_size=30';
+        } else {
+            url += '?page=' + page + '&page_size=30';
+        }
+    } else {
+        url = '/history/broadcast?page=' + page + '&page_size=30';
+    }
+
     try {
         var data = await api('GET', url);
         tab._loading = false;
         if (!data.messages || data.messages.length === 0) { tab.hasMore = false; return; }
-        var newMsgs = data.messages.reverse();
+
+        // after_id 增量时服务端返回升序，全量时为降序需反转
+        var newMsgs = afterID ? data.messages : data.messages.reverse();
+
         // 根据服务端 read_info 恢复已读标记
         if (data.read_info) {
             var info = data.read_info;
             var myId = getUserId();
-            newMsgs.forEach(function(m) {
+            (afterID ? tab.messages.concat(newMsgs) : newMsgs).forEach(function(m) {
                 if (m.from_user_id === myId && info.peer_last_read && m.id <= info.peer_last_read) {
                     m._read = true;
                 } else if (m.from_user_id !== myId && info.my_last_read && m.id <= info.my_last_read) {
@@ -1112,12 +1154,33 @@ async function loadHistory(key, page) {
                 }
             });
         }
-        if (page === 1) { tab.messages = newMsgs; renderAllMessages(tab); tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight; }
-        else { var oldH = tab.messagesEl.scrollHeight; tab.messages = newMsgs.concat(tab.messages); renderAllMessages(tab); tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight - oldH; }
-        // 群聊：从服务端恢复已读状态，防止切页后扇形图归零
+
+        // 合并消息（按 ID 去重）
+        var existingIds = new Set(tab.messages.map(function(m) { return m.id; }));
+        var toAdd = newMsgs.filter(function(m) { return !existingIds.has(m.id); });
+
+        if (page === 1 && afterID) {
+            tab.messages = tab.messages.concat(toAdd);               // 增量追加
+        } else if (page === 1) {
+            tab.messages = toAdd;                                    // 首次全量
+        } else {
+            tab.messages = toAdd.concat(tab.messages);               // 翻页前置
+        }
+
+        // 新消息写入本地 IndexedDB
+        if (toAdd.length > 0) {
+            msgStore.putMessages(key, toAdd);
+            var maxID = toAdd.reduce(function(max, m) { return m.id > max ? m.id : max; }, 0);
+            if (maxID > 0) msgStore.setLastMsgID(key, maxID);
+        }
+
+        renderAllMessages(tab);
+        if (page === 1) tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
+        else { var oldH = tab.messagesEl.scrollHeight; tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight - oldH; }
+
         if (tab.type === 'group' && typeof loadGroupReads === 'function') loadGroupReads(tab.targetId, tab);
         tab.historyPage = page + 1;
-        if (data.messages.length < 30) tab.hasMore = false;
+        if (data.messages.length < (afterID ? 50 : 30)) tab.hasMore = false;
     } catch(e) { tab._loading = false; console.error(e); }
 }
 

@@ -124,9 +124,16 @@ onReadReceipt = function(p) {
             messageReadBy.get(mid).add(p.from_user_id);
         }
     } else {
-        // 单聊：简单标记
+        // 单聊：标记 _read 并持久化到本地 IndexedDB
+        var readIds = [];
         for (var i = 0; i < tab.messages.length; i++) {
-            if (ids.indexOf(tab.messages[i].id) !== -1) tab.messages[i]._read = true;
+            if (ids.indexOf(tab.messages[i].id) !== -1) {
+                tab.messages[i]._read = true;
+                readIds.push(tab.messages[i].id);
+            }
+        }
+        if (readIds.length > 0 && typeof msgStore !== 'undefined') {
+            msgStore.markRead(key, readIds);
         }
     }
 
@@ -210,14 +217,19 @@ function sendReadReceiptForTab(key) {
                     readSet.add(getUserId());
                 }
             } else {
-                // 单聊：标记未读
+                // 单聊：标记已读
                 if (!m._read) { unreadIds.push(m.id); m._read = true; }
             }
         }
     }
     if (unreadIds.length > 0) {
-        if (tab.type === 'user') sendReadReceipt(tab.targetId, 0, unreadIds);
-        else if (tab.type === 'group') sendReadReceipt(0, tab.targetId, unreadIds);
+        if (tab.type === 'user') {
+            sendReadReceipt(tab.targetId, 0, unreadIds);
+            // 本端标记持久化到 IndexedDB
+            if (typeof msgStore !== 'undefined') msgStore.markRead(key, unreadIds);
+        } else if (tab.type === 'group') {
+            sendReadReceipt(0, tab.targetId, unreadIds);
+        }
     }
 }
 

@@ -60,8 +60,9 @@ func (h *ChatHandler) GetHistory(c *gin.Context) {
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	afterID, _ := strconv.ParseUint(c.Query("after_id"), 10, 64)
 
-	msgs, total, err := h.Svc.GetHistory(userID, uint(peerID), page, pageSize)
+	msgs, total, err := h.Svc.GetHistory(userID, uint(peerID), page, pageSize, uint(afterID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -81,8 +82,9 @@ func (h *ChatHandler) GetGroupHistory(c *gin.Context) {
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	afterID, _ := strconv.ParseUint(c.Query("after_id"), 10, 64)
 
-	msgs, total, err := h.Svc.GetGroupHistory(userID, uint(groupID), page, pageSize)
+	msgs, total, err := h.Svc.GetGroupHistory(userID, uint(groupID), page, pageSize, uint(afterID))
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
