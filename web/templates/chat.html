@@ -1114,6 +1114,8 @@ async function loadHistory(key, page) {
         }
         if (page === 1) { tab.messages = newMsgs; renderAllMessages(tab); tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight; }
         else { var oldH = tab.messagesEl.scrollHeight; tab.messages = newMsgs.concat(tab.messages); renderAllMessages(tab); tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight - oldH; }
+        // 群聊：从服务端恢复已读状态，防止切页后扇形图归零
+        if (tab.type === 'group' && typeof loadGroupReads === 'function') loadGroupReads(tab.targetId, tab);
         tab.historyPage = page + 1;
         if (data.messages.length < 30) tab.hasMore = false;
     } catch(e) { tab._loading = false; console.error(e); }
@@ -1160,6 +1162,7 @@ async function init() {
     await loadLastMessages();
     sortConversations();
     renderSidebar();
+    updateOnlineDots(); // 侧边栏渲染完成后才能注入绿点
     if (pendingOpenKey) {
         var conv = conversations.find(function(c) { return c.key === pendingOpenKey; });
         var name = conv ? conv.name : ('用户' + pendingOpenTarget);
