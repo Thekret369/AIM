@@ -33,15 +33,14 @@ function augmentTab(key, tab) {
 // 单聊：已读/未读文字
 // 群聊：扇形图 + 已读人数
 // ========================================
-var _origRenderOneMessage = null;
-function enhancedRenderOneMessage(msg) {
-    var html = _origRenderOneMessage(msg);
+// 由 chat.html 的 renderOneMessage 主动调用，将已读标记注入已生成的 HTML
+function injectReadMark(html, msg) {
     var isMe = msg.from_user_id === getUserId();
 
     var tab = chatTabs.get(activeTabKey);
     var isGroup = tab && tab.type === 'group';
 
-    // 群聊：所有消息都显示已读扇形图（不仅限于自己发的）
+    // 群聊：所有消息都显示已读扇形图
     if (isGroup) {
         return html.replace('</div>', renderReadPie(msg, tab) + '</div>');
     }
@@ -71,7 +70,7 @@ function renderReadPie(msg, tab) {
         '<span class="read-count" style="font-size:10px;color:#666;margin-left:2px">' + readCount + '/' + total + '</span>';
 }
 
-// renderOneMessage 劫持已移至 chat.html 同步执行，消除 100ms 竞态
+// injectReadMark 由 chat.html 的 renderOneMessage 主动调用，不再劫持函数引用
 
 // ========================================
 // 输入状态回调
