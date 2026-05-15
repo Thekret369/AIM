@@ -197,14 +197,14 @@ func (s *ChatService) GetReadInfo(userID, peerID uint, groupID *uint) ReadInfo {
 	var info ReadInfo
 	if groupID != nil {
 		var r model.MessageRead
-		model.DB.Where("user_id = ? AND group_id = ?", userID, *groupID).First(&r)
+		model.DB.Where("user_id = ? AND group_id = ? AND peer_user_id IS NULL", userID, *groupID).First(&r)
 		info.MyLastRead = r.LastReadMsgID
 	} else {
 		var myRead model.MessageRead
-		model.DB.Where("user_id = ? AND peer_user_id = ?", userID, peerID).First(&myRead)
+		model.DB.Where("user_id = ? AND peer_user_id = ? AND group_id IS NULL", userID, peerID).First(&myRead)
 		info.MyLastRead = myRead.LastReadMsgID
 		var peerRead model.MessageRead
-		model.DB.Where("user_id = ? AND peer_user_id = ?", peerID, userID).First(&peerRead)
+		model.DB.Where("user_id = ? AND peer_user_id = ? AND group_id IS NULL", peerID, userID).First(&peerRead)
 		info.PeerLastRead = peerRead.LastReadMsgID
 	}
 	return info
@@ -213,18 +213,24 @@ func (s *ChatService) GetReadInfo(userID, peerID uint, groupID *uint) ReadInfo {
 // GetGroupReads 返回群内各用户最后已读消息 ID，前端用于重建已读扇形图
 // 返回 map[userID]lastReadMsgID，不包含查询者本人（pie 图排除发送者）
 func (s *ChatService) GetGroupReads(groupID uint) (map[uint]uint, error) {
-	var reads []model.MessageRead
-	if err := model.DB.Where("group_id = ?", groupID).Find(&reads).Error; err != nil {
+	type row struct {
+		UserID uint
+		MaxID  uint
+	}
+	var rows []row
+	if err := model.DB.Model(&model.MessageRead{}).
+		Select("user_id, MAX(last_read_msg_id) AS max_id").
+		Where("group_id = ? AND peer_user_id IS NULL", groupID).
+		Group("user_id").
+		Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	result := make(map[uint]uint)
-	for _, r := range reads {
-		result[r.UserID] = r.LastReadMsgID
+	for _, r := range rows {
+		result[r.UserID] = r.MaxID
 	}
 	return result, nil
 }
-
-// GetBroadcastHistory 拉取广播消息记录
 func (s *ChatService) GetBroadcastHistory(page, pageSize int) ([]model.Message, int64, error) {
 	var msgs []model.Message
 	var total int64
