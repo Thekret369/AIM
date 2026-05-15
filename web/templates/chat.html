@@ -1192,7 +1192,7 @@ async function loadHistory(key, page) {
         if (page === 1) tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
         else { var oldH = tab.messagesEl.scrollHeight; tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight - oldH; }
 
-        if (tab.type === 'group' && typeof loadGroupReads === 'function') loadGroupReads(tab.targetId, tab);
+        if (tab.type === 'group' && typeof loadGroupReads === 'function' && tab.targetId) loadGroupReads(tab.targetId, tab);
         tab.historyPage = page + 1;
         if (data.messages.length < (afterID ? 50 : 30)) tab.hasMore = false;
     } catch(e) { tab._loading = false; console.error(e); }

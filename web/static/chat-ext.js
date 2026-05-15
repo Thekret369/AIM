@@ -235,6 +235,7 @@ function sendReadReceiptForTab(key) {
 
 // 从服务端恢复群聊已读状态，重建 messageReadBy Map（页面刷新/导航后调用）
 async function loadGroupReads(groupId, tab) {
+    if (!groupId) return;
     try {
         // 确保成员列表已加载（createTab 中的异步加载可能尚未完成）
         var members = groupMembersMap.get(groupId);
