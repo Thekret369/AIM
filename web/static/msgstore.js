@@ -177,7 +177,7 @@ var msgStore = (function() {
                 var store = tx.objectStore('messages');
                 var count = 0;
                 function next() { if (++count === msgIds.length) resolve(); }
-                for (var i = 0; i < msgIds.length; i++) {
+                for (let i = 0; i < msgIds.length; i++) {
                     var key = makeKey(convKey, msgIds[i]);
                     var req = store.get(key);
                     req.onsuccess = function(e) {
