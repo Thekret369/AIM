@@ -37,20 +37,19 @@ var _origRenderOneMessage = null;
 function enhancedRenderOneMessage(msg) {
     var html = _origRenderOneMessage(msg);
     var isMe = msg.from_user_id === getUserId();
-    if (!isMe) return html;
 
-    // 判断消息所属会话类型
     var tab = chatTabs.get(activeTabKey);
     var isGroup = tab && tab.type === 'group';
 
-    var mark;
+    // 群聊：所有消息都显示已读扇形图（不仅限于自己发的）
     if (isGroup) {
-        mark = renderReadPie(msg);
-    } else {
-        mark = msg._read
-            ? '<span class="read-mark" data-msg-id="' + msg.id + '" style="font-size:10px;color:#999;margin-left:4px">已读</span>'
-            : '<span class="read-mark" data-msg-id="' + msg.id + '" style="font-size:10px;color:#ccc;margin-left:4px">未读</span>';
+        return html.replace('</div>', renderReadPie(msg) + '</div>');
     }
+    // 单聊：仅自己发的消息显示已读/未读
+    if (!isMe) return html;
+    var mark = msg._read
+        ? '<span class="read-mark" data-msg-id="' + msg.id + '" style="font-size:10px;color:#999;margin-left:4px">已读</span>'
+        : '<span class="read-mark" data-msg-id="' + msg.id + '" style="font-size:10px;color:#ccc;margin-left:4px">未读</span>';
     return html.replace('</div>', mark + '</div>');
 }
 
@@ -60,8 +59,9 @@ function renderReadPie(msg) {
     var readCount = readSet ? readSet.size : 0;
     var tab = chatTabs.get(activeTabKey);
     var members = groupMembersMap.get(tab ? tab.targetId : 0) || [];
-    var total = members.length;
-    if (total === 0) total = 1; // 避免除以零
+    // 排除消息发送者（发送者自己不能已读自己的消息）
+    var total = members.length - 1;
+    if (total < 1) total = 1;
 
     var pct = Math.round(readCount / total * 100);
     var green = '#4caf50', gray = '#e0e0e0';
@@ -145,7 +145,8 @@ function refreshReadMarks(tab) {
                 var readSet = messageReadBy.get(mid);
                 var readCount = readSet ? readSet.size : 0;
                 var members = groupMembersMap.get(tab.targetId) || [];
-                var total = members.length || 1;
+                var total = members.length - 1;
+                if (total < 1) total = 1;
                 var pct = Math.round(readCount / total * 100);
                 pie.style.background = 'conic-gradient(#4caf50 0% ' + pct + '%, #e0e0e0 ' + pct + '% 100%)';
                 if (countEl && countEl.classList.contains('read-count')) {
@@ -218,4 +219,31 @@ function sendReadReceiptForTab(key) {
         if (tab.type === 'user') sendReadReceipt(tab.targetId, 0, unreadIds);
         else if (tab.type === 'group') sendReadReceipt(0, tab.targetId, unreadIds);
     }
+}
+
+// 从服务端恢复群聊已读状态，重建 messageReadBy Map（页面刷新/导航后调用）
+async function loadGroupReads(groupId, tab) {
+    try {
+        // 确保成员列表已加载（createTab 中的异步加载可能尚未完成）
+        var members = groupMembersMap.get(groupId);
+        if (!members || members.length === 0) {
+            var mData = await api('GET', '/groups/' + groupId + '/members');
+            members = mData.members || [];
+            groupMembersMap.set(groupId, members);
+        }
+        var data = await api('GET', '/groups/' + groupId + '/reads');
+        var reads = data.reads || {}; // {user_id: last_read_msg_id}
+        // 遍历所有已加载的消息，重建已读用户集合
+        for (var i = 0; i < tab.messages.length; i++) {
+            var msg = tab.messages[i];
+            if (!messageReadBy.has(msg.id)) messageReadBy.set(msg.id, new Set());
+            var readSet = messageReadBy.get(msg.id);
+            for (var j = 0; j < members.length; j++) {
+                var mid = members[j].user_id;
+                if (mid === msg.from_user_id) continue; // 发送者不读自己的消息
+                if (reads[mid] && msg.id <= reads[mid]) readSet.add(mid);
+            }
+        }
+        refreshReadMarks(tab); // 更新 DOM 中的扇形图
+    } catch(e) { console.error('loadGroupReads:', e); }
 }

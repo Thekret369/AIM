@@ -77,9 +77,10 @@ async function loadFriends() {
         }
         list.innerHTML = data.friends.map(f => {
             const remark = f.remark || f.nickname || f.username || ('用户' + f.friend_id);
-            return `<div class="contact-item" onclick="window.location.href='/chat?peer=${f.friend_id}'">
+            var onlineDot = onlineUsers.has(f.friend_id) ? '<span class="online-dot" style="display:inline-block;width:8px;height:8px;background:#4caf50;border-radius:50%;margin-right:6px;vertical-align:middle"></span>' : '';
+            return `<div class="contact-item" data-user-id="${f.friend_id}" onclick="window.location.href='/chat?peer=${f.friend_id}'">
                 <div class="avatar">${remark[0]}</div>
-                <div class="info"><div class="name">${remark}</div><div class="remark">${f.note || ''}</div></div>
+                <div class="info">${onlineDot}<div class="name" style="display:inline">${remark}</div><div class="remark">${f.note || ''}</div></div>
                 <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteFriend(${f.friend_id})">删除</button>
             </div>`;
         }).join('');
@@ -177,10 +178,40 @@ function escapeHtml(s) {
     return div.innerHTML;
 }
 
+// 在线状态 — 刷新好友列表中的绿点
+function updateOnlineDots() {
+    document.querySelectorAll('.contact-item[data-user-id]').forEach(function(el) {
+        var uid = parseInt(el.dataset.userId);
+        var dot = el.querySelector('.online-dot');
+        if (!dot) {
+            dot = document.createElement('span');
+            dot.className = 'online-dot';
+            dot.style.cssText = 'display:inline-block;width:8px;height:8px;background:#4caf50;border-radius:50%;margin-right:6px;vertical-align:middle';
+            var nameEl = el.querySelector('.name');
+            if (nameEl) nameEl.parentNode.insertBefore(dot, nameEl);
+        }
+        dot.style.display = onlineUsers.has(uid) ? 'inline-block' : 'none';
+    });
+}
+
+async function loadOnlineStatus() {
+    try {
+        var data = await api('GET', '/friends/online');
+        (data.friends || []).forEach(function(f) {
+            if (f.is_online) onlineUsers.add(f.id);
+        });
+        updateOnlineDots();
+    } catch(e) {}
+}
+
+// 实时在线状态变更
+onStatus = function(p) {
+    updateOnlineDots();
+};
+
 loadNavUser();
 loadAndApplySettings();
-loadFriends();
-loadPending();
+Promise.all([loadFriends(), loadPending()]).then(function() { loadOnlineStatus(); });
 </script>
 </body>
 </html>

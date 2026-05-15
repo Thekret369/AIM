@@ -104,3 +104,18 @@ func (h *ChatHandler) GetBroadcastHistory(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"messages": msgs, "total": total})
 }
+
+// GetGroupReads 获取群内各用户的最后已读消息 ID，用于前端重建已读扇形图
+func (h *ChatHandler) GetGroupReads(c *gin.Context) {
+	groupID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组 ID"})
+		return
+	}
+	reads, err := h.Svc.GetGroupReads(uint(groupID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"reads": reads})
+}

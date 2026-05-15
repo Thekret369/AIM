@@ -141,6 +141,7 @@ func main() {
 		auth.POST("/groups/:id/unmute", groupH.UnmuteMember)
 		auth.POST("/groups/:id/dnd", groupH.ToggleDND)
 		auth.GET("/groups/:id/members", groupH.GetGroupMembers)
+		auth.GET("/groups/:id/reads", chatH.GetGroupReads) // 群已读状态恢复
 		auth.POST("/groups/:id/announcements", groupH.CreateAnnouncement)
 		auth.GET("/groups/:id/announcements", groupH.GetAnnouncements)
 
