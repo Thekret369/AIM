@@ -93,6 +93,7 @@ async function loadProfile() {
         document.getElementById('profileTitle').textContent = isSelf ? '个人资料' : (u.nickname || u.username) + ' 的资料';
         document.getElementById('profileInfo').innerHTML =
             '<div class="profile-card">' +
+            '<p><strong>用户ID：</strong>' + u.id + '</p>' +
             '<p><strong>用户名：</strong>' + escapeHtml(u.username) + '</p>' +
             '<p><strong>昵称：</strong>' + escapeHtml(u.nickname || '未设置') + '</p>' +
             '<p><strong>头像：</strong>' + (u.avatar ? '<img src="' + escapeHtml(u.avatar) + '" class="avatar-preview" onerror="this.style.display=\'none\'">' : '未设置') + '</p>' +
