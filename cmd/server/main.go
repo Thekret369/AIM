@@ -54,10 +54,22 @@ func main() {
 			}
 		}
 	}()
+	// 输入状态消费协程
+	go func() {
+		for p := range hub.OnTyping {
+			chatSvc.HandleTyping(p)
+		}
+	}()
+	// 已读回执消费协程
+	go func() {
+		for p := range hub.OnReadReceipt {
+			chatSvc.MarkRead(p)
+		}
+	}()
 
 	// 初始化所有 Handler
 	authH := &handler.AuthHandler{Svc: authSvc}
-	friendH := &handler.FriendHandler{Svc: friendSvc}
+	friendH := &handler.FriendHandler{Svc: friendSvc, Hub: hub}
 	groupH := &handler.GroupHandler{Svc: groupSvc}
 	contactH := &handler.ContactGroupHandler{Svc: contactSvc}
 	chatH := &handler.ChatHandler{Svc: chatSvc, Hub: hub, JWTSecret: cfg.JWT.Secret}
@@ -106,6 +118,7 @@ func main() {
 		auth.PUT("/friends/:id/remark", friendH.UpdateRemark)
 		auth.GET("/friends", friendH.FriendList)
 		auth.GET("/friends/pending", friendH.PendingRequests)
+		auth.GET("/friends/online", friendH.GetOnlineFriends)
 
 		// 联系人分组
 		auth.POST("/contact-groups", contactH.Create)
