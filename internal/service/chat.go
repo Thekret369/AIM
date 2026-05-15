@@ -37,7 +37,12 @@ func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
 
 	// UPSERT：已存在则更新 LastReadMsgID（取较大值），不存在则创建
 	existing := model.MessageRead{}
-	q := model.DB.Where("user_id = ? AND peer_user_id = ?", p.FromUserID, peerUserID)
+	q := model.DB.Where("user_id = ?", p.FromUserID)
+	if peerUserID == nil {
+		q = q.Where("peer_user_id IS NULL")
+	} else {
+		q = q.Where("peer_user_id = ?", *peerUserID)
+	}
 	if groupID == nil {
 		q = q.Where("group_id IS NULL")
 	} else {
