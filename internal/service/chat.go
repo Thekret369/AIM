@@ -15,15 +15,14 @@ type ChatService struct {
 	Hub *ws.Hub
 }
 
-// MarkRead 标记消息已读，更新 MessageRead 表，并通知消息发送者
+// MarkRead 标记消息已读，更新 MessageRead 表
+// 单聊：通知消息发送者；群聊：广播到全群成员
 func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
 	if len(p.MessageIDs) == 0 {
 		return
 	}
-	// 取最后一条消息 ID 作为已读位置
 	lastMsgID := p.MessageIDs[len(p.MessageIDs)-1]
 
-	// 查询这些消息以确定会话类型
 	var msg model.Message
 	if err := model.DB.First(&msg, p.MessageIDs[0]).Error; err != nil {
 		return
@@ -36,7 +35,6 @@ func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
 		groupID = msg.GroupID
 	}
 
-	// UPSERT 已读记录
 	read := model.MessageRead{
 		UserID:        p.FromUserID,
 		PeerUserID:    peerUserID,
@@ -48,9 +46,14 @@ func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
 		Assign(&read).
 		FirstOrCreate(&read)
 
-	// 通知消息发送者
 	if peerUserID != nil {
 		s.Hub.SendReadReceipt(*peerUserID, p)
+	} else if groupID != nil {
+		var memberIDs []uint
+		model.DB.Model(&model.GroupMember{}).
+			Where("group_id = ?", *groupID).
+			Pluck("user_id", &memberIDs)
+		s.Hub.SendReadReceiptToUsers(memberIDs, p)
 	}
 }
 
