@@ -899,9 +899,9 @@ function formatMsgTime(createdAt) {
     var timeStr = formatMsgTime(msg.created_at);
     return '<div class="msg ' + cls + '">' +
         '<div class="bubble">' +
-            '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" style="color:var(--link-color)">' + escapeHtml(name) + '</a></div>' +
+            '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" style="color:var(--link-color)">' + escapeHtml(name) + '</a>' +
+            (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + '</div>' +
             body +
-            (timeStr ? '<div class="msg-time">' + timeStr + '</div>' : '') +
         '</div>' +
     '</div>';
 }
