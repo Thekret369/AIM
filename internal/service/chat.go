@@ -37,8 +37,13 @@ func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
 
 	// UPSERT：已存在则更新 LastReadMsgID（取较大值），不存在则创建
 	existing := model.MessageRead{}
-	err := model.DB.Where("user_id = ? AND peer_user_id = ? AND group_id = ?",
-		p.FromUserID, peerUserID, groupID).First(&existing).Error
+	q := model.DB.Where("user_id = ? AND peer_user_id = ?", p.FromUserID, peerUserID)
+	if groupID == nil {
+		q = q.Where("group_id IS NULL")
+	} else {
+		q = q.Where("group_id = ?", *groupID)
+	}
+	err := q.First(&existing).Error
 	if err != nil {
 		model.DB.Create(&model.MessageRead{
 			UserID: p.FromUserID, PeerUserID: peerUserID, GroupID: groupID,
@@ -106,29 +111,41 @@ func (s *ChatService) Send(msg *model.Message) error {
 }
 
 // GetHistory 拉取两个用户之间的聊天记录（单聊）
-func (s *ChatService) GetHistory(userID, peerID uint, page, pageSize int) ([]model.Message, int64, error) {
+// afterID > 0 时为增量同步：返回 id > afterID 的消息，按 id 升序
+func (s *ChatService) GetHistory(userID, peerID uint, page, pageSize int, afterID uint) ([]model.Message, int64, error) {
 	var msgs []model.Message
 	var total int64
 
-	query := model.DB.Model(&model.Message{}).
-		Where("(from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
-			userID, peerID, peerID, userID)
+	where := "(from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)"
+	args := []interface{}{userID, peerID, peerID, userID}
 
-	query.Count(&total)
+	model.DB.Model(&model.Message{}).Where(where, args...).Count(&total)
 
-	if err := query.Preload("FromUser").
-		Order("created_at DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
-		Find(&msgs).Error; err != nil {
-		return nil, 0, err
+	db := model.DB.Where(where, args...)
+	if afterID > 0 {
+		// 增量同步：只返回客户端缺失的新消息，按 id 升序
+		err := db.Where("id > ?", afterID).
+			Preload("FromUser").Order("id ASC").Find(&msgs).Error
+		if err != nil {
+			return nil, 0, err
+		}
+	} else {
+		// 首次加载：分页拉取，最新在前
+		err := db.Preload("FromUser").
+			Order("created_at DESC").
+			Offset((page - 1) * pageSize).
+			Limit(pageSize).
+			Find(&msgs).Error
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 	return msgs, total, nil
 }
 
 // GetGroupHistory 拉取群聊消息记录
-func (s *ChatService) GetGroupHistory(userID, groupID uint, page, pageSize int) ([]model.Message, int64, error) {
-	// 先校验用户是否在此群内
+// afterID > 0 时为增量同步：返回 id > afterID 的消息，按 id 升序
+func (s *ChatService) GetGroupHistory(userID, groupID uint, page, pageSize int, afterID uint) ([]model.Message, int64, error) {
 	var count int64
 	model.DB.Model(&model.GroupMember{}).
 		Where("group_id = ? AND user_id = ?", groupID, userID).
@@ -140,15 +157,26 @@ func (s *ChatService) GetGroupHistory(userID, groupID uint, page, pageSize int) 
 	var msgs []model.Message
 	var total int64
 
-	query := model.DB.Model(&model.Message{}).Where("group_id = ?", groupID)
-	query.Count(&total)
+	model.DB.Model(&model.Message{}).Where("group_id = ?", groupID).Count(&total)
 
-	if err := query.Preload("FromUser").
-		Order("created_at DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
-		Find(&msgs).Error; err != nil {
-		return nil, 0, err
+	db := model.DB.Where("group_id = ?", groupID)
+	if afterID > 0 {
+		// 增量同步：只返回客户端缺失的新消息，按 id 升序
+		err := db.Where("id > ?", afterID).
+			Preload("FromUser").Order("id ASC").Find(&msgs).Error
+		if err != nil {
+			return nil, 0, err
+		}
+	} else {
+		// 首次加载：分页拉取，最新在前
+		err := db.Preload("FromUser").
+			Order("created_at DESC").
+			Offset((page - 1) * pageSize).
+			Limit(pageSize).
+			Find(&msgs).Error
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 	return msgs, total, nil
 }
