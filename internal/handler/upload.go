@@ -10,12 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// UploadHandler 文件上传处理器
 type UploadHandler struct {
 	Uploader storage.Uploader
 }
 
-// 允许的 MIME 类型前缀
 var allowedMimePrefixes = []string{
 	"image/",
 	"audio/",
@@ -31,17 +29,13 @@ var allowedMimePrefixes = []string{
 	"text/",
 }
 
-// 禁止的文件扩展名
 var blockedExts = map[string]bool{
 	".exe": true, ".bat": true, ".cmd": true, ".sh": true,
 	".ps1": true, ".vbs": true, ".com": true, ".msi": true,
 }
 
-// 文件大小上限：50MB
 const maxUploadSize = 50 << 20
 
-// HandleUpload 处理 multipart 文件上传
-// POST /api/upload — 需 JWT 认证
 func (h *UploadHandler) HandleUpload(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
@@ -54,14 +48,12 @@ func (h *UploadHandler) HandleUpload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// 校验扩展名黑名单
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	if blockedExts[ext] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的文件类型"})
 		return
 	}
 
-	// 校验 MIME 类型
 	contentType := header.Header.Get("Content-Type")
 	if !isAllowedMime(contentType) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的文件类型: " + contentType})
@@ -82,12 +74,14 @@ func (h *UploadHandler) HandleUpload(c *gin.Context) {
 	})
 }
 
-// isAllowedMime 校验 Content-Type 是否在允许范围内
 func isAllowedMime(contentType string) bool {
 	if contentType == "" {
-		return true // 浏览器未提供时放行，依赖扩展名校验
+		return true
 	}
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if i := strings.Index(contentType, ";"); i >= 0 {
+		contentType = strings.TrimSpace(contentType[:i])
+	}
 	for _, prefix := range allowedMimePrefixes {
 		if strings.HasPrefix(contentType, prefix) {
 			return true

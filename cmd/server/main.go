@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"AIM/config"
@@ -49,7 +51,7 @@ func main() {
 	// 启动消息消费协程：从 Hub.OnMessage 读取，经 ChatService 持久化并路由
 	go func() {
 		for msg := range hub.OnMessage {
-			if err := chatSvc.Send(msg); err != nil {
+			if err := chatSvc.SendFromClient(msg); err != nil {
 				log.Printf("[msg] 消息发送失败: %v", err)
 			}
 		}
@@ -85,7 +87,7 @@ func main() {
 
 	// 静态文件与模板
 	r.Static("/static", "./web/static")
-	r.Static("/data/uploads", "./data/uploads")
+	r.GET("/data/uploads/*filepath", serveUploadedFile)
 	r.LoadHTMLGlob("web/templates/*")
 
 	// 登录注册页面
@@ -156,9 +158,10 @@ func main() {
 		auth.PUT("/settings", settingsH.Update)
 
 		// 文件上传
-			auth.POST("/upload", uploadH.HandleUpload)
+		auth.POST("/upload", uploadH.HandleUpload)
 
-			// 消息历史
+		// 消息历史
+		auth.GET("/search/messages", chatH.SearchMessages)
 		auth.GET("/history", chatH.GetHistory)
 		auth.GET("/history/group/:id", chatH.GetGroupHistory)
 		auth.GET("/history/broadcast", chatH.GetBroadcastHistory)
@@ -194,5 +197,29 @@ func main() {
 	log.Printf("[server] AIM 服务启动于 http://%s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("[server] 启动失败: %v", err)
+	}
+}
+
+func serveUploadedFile(c *gin.Context) {
+	raw := strings.TrimPrefix(c.Param("filepath"), "/")
+	clean := filepath.Clean(raw)
+	if clean == "." || clean == ".." || filepath.IsAbs(clean) || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
+		c.Status(404)
+		return
+	}
+
+	c.Header("X-Content-Type-Options", "nosniff")
+	if isActiveUploadExt(strings.ToLower(filepath.Ext(clean))) {
+		c.Header("Content-Disposition", "attachment")
+	}
+	c.File(filepath.Join("./data/uploads", clean))
+}
+
+func isActiveUploadExt(ext string) bool {
+	switch ext {
+	case ".html", ".htm", ".xhtml", ".svg", ".js", ".mjs":
+		return true
+	default:
+		return false
 	}
 }
