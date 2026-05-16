@@ -2,7 +2,9 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"AIM/internal/middleware"
 	"AIM/internal/service"
@@ -13,16 +15,25 @@ import (
 )
 
 type ChatHandler struct {
-	Svc        *service.ChatService
-	Hub        *ws.Hub
-	JWTSecret  string
+	Svc       *service.ChatService
+	Hub       *ws.Hub
+	JWTSecret string
 }
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// 开发阶段允许跨域
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return strings.EqualFold(u.Host, r.Host)
+	},
 }
 
 // HandleWS 升级 WebSocket 连接
@@ -102,6 +113,40 @@ func (h *ChatHandler) GetBroadcastHistory(c *gin.Context) {
 	msgs, total, err := h.Svc.GetBroadcastHistory(page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"messages": msgs, "total": total})
+}
+
+// SearchMessages 搜索当前用户可访问范围内的消息
+func (h *ChatHandler) SearchMessages(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	scope := strings.TrimSpace(c.DefaultQuery("type", "user"))
+	keyword := strings.TrimSpace(c.Query("q"))
+	if keyword == "" {
+		c.JSON(http.StatusOK, gin.H{"messages": []interface{}{}, "total": 0})
+		return
+	}
+
+	var targetID uint
+	if scope == "user" || scope == "group" {
+		id, err := strconv.ParseUint(c.Query("target_id"), 10, 64)
+		if err != nil || id == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 target_id"})
+			return
+		}
+		targetID = uint(id)
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	msgs, total, err := h.Svc.SearchMessages(userID, scope, targetID, keyword, page, pageSize)
+	if err != nil {
+		status := http.StatusBadRequest
+		if scope == "group" {
+			status = http.StatusForbidden
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"messages": msgs, "total": total})
