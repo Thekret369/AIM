@@ -65,15 +65,14 @@ func main() {
 			MaxTokens:          cfg.AI.MaxTokens,
 		})
 		chatSvc.AIResponder = aiSvc
-		if strings.TrimSpace(cfg.AI.BaseURL) != "" && strings.TrimSpace(cfg.AI.DefaultModel) != "" {
-			bot, err := aiSvc.EnsureDefaultBot()
-			if err != nil {
-				log.Printf("[ai] 默认 AI 用户初始化失败: %v", err)
-			} else {
-				log.Printf("[ai] 默认 AI 用户已就绪: id=%d username=%s", bot.ID, bot.Username)
-			}
+		bot, err := aiSvc.EnsureDefaultBot()
+		if err != nil {
+			log.Printf("[ai] 默认 AI 用户初始化失败: %v", err)
 		} else {
-			log.Println("[ai] AI 服务已启用，未配置 base_url/default_model，跳过默认 AI 用户创建")
+			log.Printf("[ai] 默认 AI 用户已就绪: id=%d username=%s", bot.ID, bot.Username)
+			if strings.TrimSpace(cfg.AI.BaseURL) == "" || strings.TrimSpace(cfg.AI.DefaultModel) == "" {
+				log.Println("[ai] 默认 AI 用户已创建，未配置 base_url/default_model，聊天时将提示 AI 尚未配置")
+			}
 		}
 	}
 
