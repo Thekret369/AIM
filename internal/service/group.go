@@ -78,6 +78,24 @@ func (s *GroupService) JoinGroup(groupID, userID uint) error {
 	return model.DB.Create(member).Error
 }
 
+func (s *GroupService) canAddAIToGroup(operatorID, targetID uint) error {
+	var bot model.AIBot
+	if err := model.DB.Where("user_id = ? AND status <> ?", targetID, model.AIBotStatusDeleted).
+		First(&bot).Error; err != nil {
+		return nil
+	}
+	if bot.Status != model.AIBotStatusEnabled {
+		return errors.New("AI 助手未启用")
+	}
+	if bot.IsSystem {
+		return nil
+	}
+	if bot.OwnerID != nil && *bot.OwnerID == operatorID {
+		return nil
+	}
+	return errors.New("只能添加内置 AI 或自己创建的 AI 助手")
+}
+
 // LeaveGroup 退出群组
 func (s *GroupService) LeaveGroup(groupID, userID uint) error {
 	var member model.GroupMember
@@ -299,6 +317,11 @@ func (s *GroupService) AddMember(groupID, operatorID, targetID uint) error {
 	var user model.User
 	if err := model.DB.First(&user, targetID).Error; err != nil {
 		return errors.New("用户不存在")
+	}
+	if user.IsAI {
+		if err := s.canAddAIToGroup(operatorID, targetID); err != nil {
+			return err
+		}
 	}
 	var count int64
 	model.DB.Model(&model.GroupMember{}).
