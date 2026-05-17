@@ -118,14 +118,13 @@ func main() {
 	r.Static("/static", "./web/static")
 	r.GET("/data/uploads/*filepath", serveUploadedFile)
 	r.LoadHTMLGlob("web/templates/*")
+	registerEmptyAssetFallback(r, "/favicon.ico")
+	registerEmptyAssetFallback(r, "/apple-touch-icon.png")
+	registerEmptyAssetFallback(r, "/apple-touch-icon-precomposed.png")
 
 	// 登录注册页面
-	r.GET("/", func(c *gin.Context) {
-		c.HTML(200, "login.html", nil)
-	})
-	r.GET("/login", func(c *gin.Context) {
-		c.HTML(200, "login.html", nil)
-	})
+	registerHTMLPage(r, "/", "login.html")
+	registerHTMLPage(r, "/login", "login.html")
 
 	// 公开 API（免鉴权）
 	api := r.Group("/api")
@@ -203,24 +202,12 @@ func main() {
 	}
 
 	// 页面路由（无服务端鉴权，由前端 JS 检查 sessionStorage token）
-	r.GET("/contacts", func(c *gin.Context) {
-		c.HTML(200, "contacts.html", nil)
-	})
-	r.GET("/chat", func(c *gin.Context) {
-		c.HTML(200, "chat.html", nil)
-	})
-	r.GET("/groups", func(c *gin.Context) {
-		c.HTML(200, "groups.html", nil)
-	})
-	r.GET("/ai", func(c *gin.Context) {
-		c.HTML(200, "ai.html", nil)
-	})
-	r.GET("/profile", func(c *gin.Context) {
-		c.HTML(200, "profile.html", nil)
-	})
-	r.GET("/settings", func(c *gin.Context) {
-		c.HTML(200, "settings.html", nil)
-	})
+	registerHTMLPage(r, "/contacts", "contacts.html")
+	registerHTMLPage(r, "/chat", "chat.html")
+	registerHTMLPage(r, "/groups", "groups.html")
+	registerHTMLPage(r, "/ai", "ai.html")
+	registerHTMLPage(r, "/profile", "profile.html")
+	registerHTMLPage(r, "/settings", "settings.html")
 
 	// 优雅关闭
 	go func() {
@@ -236,6 +223,25 @@ func main() {
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("[server] 启动失败: %v", err)
 	}
+}
+
+func registerHTMLPage(r *gin.Engine, path, template string) {
+	r.GET(path, func(c *gin.Context) {
+		c.HTML(200, template, nil)
+	})
+	// 部分浏览器预检、代理健康检查会用 HEAD 探测页面，避免误报 404。
+	r.HEAD(path, func(c *gin.Context) {
+		c.Status(200)
+	})
+}
+
+func registerEmptyAssetFallback(r *gin.Engine, path string) {
+	r.GET(path, func(c *gin.Context) {
+		c.Status(204)
+	})
+	r.HEAD(path, func(c *gin.Context) {
+		c.Status(204)
+	})
 }
 
 func serveUploadedFile(c *gin.Context) {
