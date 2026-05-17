@@ -4,6 +4,8 @@ package config
 import (
 	"fmt"
 	"log"
+	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -32,12 +34,29 @@ type Log struct {
 	File  string `mapstructure:"file"`
 }
 
+// AI 大模型接入配置。
+type AI struct {
+	Enabled            bool    `mapstructure:"enabled"`
+	BaseURL            string  `mapstructure:"base_url"`
+	APIKey             string  `mapstructure:"api_key"`
+	APIKeyEnv          string  `mapstructure:"api_key_env"`
+	DefaultModel       string  `mapstructure:"default_model"`
+	DefaultBotUsername string  `mapstructure:"default_bot_username"`
+	DefaultBotNickname string  `mapstructure:"default_bot_nickname"`
+	SystemPrompt       string  `mapstructure:"system_prompt"`
+	TimeoutSeconds     int     `mapstructure:"timeout_seconds"`
+	MaxContextMessages int     `mapstructure:"max_context_messages"`
+	Temperature        float64 `mapstructure:"temperature"`
+	MaxTokens          int     `mapstructure:"max_tokens"`
+}
+
 // Config 总配置
 type Config struct {
 	Server   Server   `mapstructure:"server"`
 	Database Database `mapstructure:"database"`
 	JWT      JWT      `mapstructure:"jwt"`
 	Log      Log      `mapstructure:"log"`
+	AI       AI       `mapstructure:"ai"`
 }
 
 // Load 加载配置
@@ -47,6 +66,9 @@ func Load(configDir string) (*Config, error) {
 	v.SetConfigType("yaml")
 	v.AddConfigPath(configDir)
 	v.AddConfigPath(".")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+	setDefaults(v)
 
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)
@@ -56,7 +78,30 @@ func Load(configDir string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("解析配置失败: %w", err)
 	}
+	fillAIConfigFromEnv(&cfg)
 
 	log.Printf("[config] 配置加载完成，端口: %d", cfg.Server.Port)
 	return &cfg, nil
+}
+
+func setDefaults(v *viper.Viper) {
+	v.SetDefault("ai.enabled", false)
+	v.SetDefault("ai.default_bot_username", "ai_assistant")
+	v.SetDefault("ai.default_bot_nickname", "AI助手")
+	v.SetDefault("ai.timeout_seconds", 60)
+	v.SetDefault("ai.max_context_messages", 12)
+	v.SetDefault("ai.temperature", 0.7)
+	v.SetDefault("ai.max_tokens", 1024)
+}
+
+func fillAIConfigFromEnv(cfg *Config) {
+	if cfg.AI.APIKey != "" {
+		return
+	}
+	if cfg.AI.APIKeyEnv != "" {
+		cfg.AI.APIKey = os.Getenv(cfg.AI.APIKeyEnv)
+	}
+	if cfg.AI.APIKey == "" {
+		cfg.AI.APIKey = os.Getenv("AIM_AI_API_KEY")
+	}
 }
