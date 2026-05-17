@@ -13,6 +13,11 @@ const (
 	MsgAudio MessageType = "audio"
 )
 
+const (
+	ConversationUser  = "user"
+	ConversationGroup = "group"
+)
+
 // Message 消息模型，单表存储所有类型消息
 // 单聊：ToUserID 非空，GroupID 为空
 // 群聊：GroupID 非空，ToUserID 为空
@@ -23,26 +28,30 @@ type Message struct {
 	Type       MessageType `gorm:"size:16;not null;default:'text'" json:"type"`
 	FromUserID uint        `gorm:"index;not null" json:"from_user_id"`
 	FromUser   User        `gorm:"foreignKey:FromUserID" json:"from_user,omitempty"`
-	ToUserID   *uint       `gorm:"index" json:"to_user_id,omitempty"` // 单聊接收者
-	GroupID    *uint       `gorm:"index" json:"group_id,omitempty"`    // 群聊 ID
+	ToUserID   *uint       `gorm:"index" json:"to_user_id,omitempty"`   // 单聊接收者
+	GroupID    *uint       `gorm:"index" json:"group_id,omitempty"`     // 群聊 ID
 	Content    string      `gorm:"type:text" json:"content"`            // 文本内容或文件 URL
 	FileName   string      `gorm:"size:256" json:"file_name,omitempty"` // 文件/图片/音频的原文件名
 	FileSize   int64       `json:"file_size,omitempty"`                 // 文件大小(字节)
+	// RecipientCount 记录群消息发送时除发送者外的可读成员数，用于稳定历史已读分母
+	RecipientCount int `gorm:"default:0" json:"recipient_count,omitempty"`
 	// ThumbnailURL 缩略图 URL（仅图片消息）
 	ThumbnailURL string `gorm:"size:512" json:"thumbnail_url,omitempty"`
 	// Mentions 被 @ 的用户 ID 列表，JSON 数组如 "[1,3,5]"
-	Mentions   string    `gorm:"size:512" json:"mentions,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	Mentions  string    `gorm:"size:512" json:"mentions,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// MessageRead 消息已读记录，联合唯一约束防止重复标记
+// MessageRead 消息已读记录
 // 用户在某会话（单聊/群聊）中已读的最后一条消息 ID
 type MessageRead struct {
-	ID          uint   `gorm:"primaryKey" json:"id"`
-	UserID      uint   `gorm:"uniqueIndex:idx_read;not null" json:"user_id"`
-	PeerUserID  *uint  `gorm:"uniqueIndex:idx_read" json:"peer_user_id,omitempty"` // 单聊对方
-	GroupID     *uint  `gorm:"uniqueIndex:idx_read" json:"group_id,omitempty"`      // 群聊
-	LastReadMsgID uint `gorm:"not null" json:"last_read_msg_id"`                   // 已读到的最后一条消息 ID
+	ID               uint   `gorm:"primaryKey" json:"id"`
+	UserID           uint   `gorm:"index;not null" json:"user_id"`
+	ConversationType string `gorm:"size:16;not null;default:'';index" json:"conversation_type"`
+	ConversationID   uint   `gorm:"not null;default:0;index" json:"conversation_id"`
+	PeerUserID       *uint  `gorm:"index" json:"peer_user_id,omitempty"` // 单聊对方，保留用于兼容旧查询
+	GroupID          *uint  `gorm:"index" json:"group_id,omitempty"`     // 群聊，保留用于兼容旧查询
+	LastReadMsgID    uint   `gorm:"not null" json:"last_read_msg_id"`    // 已读到的最后一条消息 ID
 }
 
 // IsToUser 是否为发给特定用户的单聊消息
