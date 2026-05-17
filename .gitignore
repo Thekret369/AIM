@@ -14,10 +14,11 @@ data/uploads/
 aim
 aim.exe
 server.exe
+*.exe~
 *.out
 
 # 测试目录
-tEST/
+tests/
 
 # 环境文件
 .env
