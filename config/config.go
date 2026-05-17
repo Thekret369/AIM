@@ -85,9 +85,9 @@ func Load(configDir string) (*Config, error) {
 }
 
 func setDefaults(v *viper.Viper) {
-	v.SetDefault("ai.enabled", false)
+	v.SetDefault("ai.enabled", true)
 	v.SetDefault("ai.default_bot_username", "ai_assistant")
-	v.SetDefault("ai.default_bot_nickname", "AI助手")
+	v.SetDefault("ai.default_bot_nickname", "蓝妹")
 	v.SetDefault("ai.timeout_seconds", 60)
 	v.SetDefault("ai.max_context_messages", 12)
 	v.SetDefault("ai.temperature", 0.7)
