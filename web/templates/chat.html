@@ -28,17 +28,17 @@
     <!-- 右侧聊天区 -->
     <div class="chat-main" id="chatMain">
         <div class="tab-bar" id="tabBar"></div>
-        <div style="display:flex;flex:1;overflow:hidden">
+        <div class="chat-content-shell">
             <div class="tab-panels" id="tabPanels">
                 <div class="no-chat-placeholder" id="noChatPlaceholder">选择好友或群组开始聊天</div>
             </div>
             <!-- 群详情右侧抽屉 -->
             <div class="group-panel hidden" id="groupPanel">
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #e0e4e8;background:#f9f9f9;flex-shrink:0">
-                    <span style="font-weight:500" id="gpTitle">群详情</span>
-                    <span style="display:flex;align-items:center;gap:8px">
-                        <button class="btn btn-sm" id="gpDndBtn" onclick="toggleGroupDND()" style="font-size:11px" title="免打扰">🔔</button>
-                        <span style="cursor:pointer;font-size:18px;color:#999;line-height:1" onclick="closeGroupPanel()">&times;</span>
+                <div class="group-panel-head">
+                    <span id="gpTitle">群详情</span>
+                    <span class="group-panel-tools">
+                        <button class="btn btn-sm group-panel-dnd" id="gpDndBtn" onclick="toggleGroupDND()" title="免打扰">🔔</button>
+                        <button class="group-panel-close" type="button" onclick="closeGroupPanel()" aria-label="关闭群详情">&times;</button>
                     </span>
                 </div>
                 <div class="group-panel-tabs">

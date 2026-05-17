@@ -264,3 +264,13 @@ function playMessageSound() {
         // 浏览器不支持或音频被阻止，静默处理
     }
 }
+
+// 高亮当前页面导航，保持所有模板共用同一套导航反馈。
+(function markCurrentNavigation() {
+    var path = window.location.pathname || '/';
+    document.querySelectorAll('.nav a[href]').forEach(function(link) {
+        var href = link.getAttribute('href');
+        if (!href || href === '/profile') return;
+        if (path === href) link.classList.add('nav-active');
+    });
+})();
