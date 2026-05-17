@@ -33,6 +33,9 @@ func setupChatSecurityTest(t *testing.T) (*ChatService, *GroupService) {
 		t.Fatalf("migrate test db: %v", err)
 	}
 	model.DB = db
+	if err := model.EnsureIndexes(); err != nil {
+		t.Fatalf("ensure indexes: %v", err)
+	}
 
 	return &ChatService{Hub: ws.NewHub()}, &GroupService{}
 }
@@ -163,6 +166,9 @@ func TestMarkReadIgnoresMessagesNotAddressedToReader(t *testing.T) {
 	if read.LastReadMsgID != valid.ID {
 		t.Fatalf("expected last read id %d, got %d", valid.ID, read.LastReadMsgID)
 	}
+	if read.ConversationType != model.ConversationUser || read.ConversationID != sender.ID {
+		t.Fatalf("expected user conversation %d, got %s/%d", sender.ID, read.ConversationType, read.ConversationID)
+	}
 
 	var count int64
 	model.DB.Model(&model.MessageRead{}).
@@ -205,6 +211,89 @@ func TestMarkReadRejectsNonMemberGroupReader(t *testing.T) {
 	model.DB.Model(&model.MessageRead{}).Where("user_id = ?", outsider.ID).Count(&count)
 	if count != 0 {
 		t.Fatalf("non-member group read record was created, count=%d", count)
+	}
+}
+
+func TestMarkReadUsesAtomicHighWatermark(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	sender := createSecurityUser(t, "read_sender_highwater")
+	reader := createSecurityUser(t, "read_reader_highwater")
+	toReader := reader.ID
+
+	first := &model.Message{Type: model.MsgText, FromUserID: sender.ID, ToUserID: &toReader, Content: "first"}
+	second := &model.Message{Type: model.MsgText, FromUserID: sender.ID, ToUserID: &toReader, Content: "second"}
+	if err := model.DB.Create(first).Error; err != nil {
+		t.Fatalf("create first message: %v", err)
+	}
+	if err := model.DB.Create(second).Error; err != nil {
+		t.Fatalf("create second message: %v", err)
+	}
+
+	chatSvc.MarkRead(&ws.ReadReceiptPayload{FromUserID: reader.ID, MessageIDs: []uint{second.ID}})
+	chatSvc.MarkRead(&ws.ReadReceiptPayload{FromUserID: reader.ID, MessageIDs: []uint{first.ID}})
+
+	var reads []model.MessageRead
+	if err := model.DB.Where("user_id = ? AND conversation_type = ? AND conversation_id = ?", reader.ID, model.ConversationUser, sender.ID).
+		Find(&reads).Error; err != nil {
+		t.Fatalf("query reads: %v", err)
+	}
+	if len(reads) != 1 {
+		t.Fatalf("expected one read row, got %d", len(reads))
+	}
+	if reads[0].LastReadMsgID != second.ID {
+		t.Fatalf("expected high watermark %d, got %d", second.ID, reads[0].LastReadMsgID)
+	}
+}
+
+func TestMarkGroupReadWatermark(t *testing.T) {
+	chatSvc, groupSvc := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "read_group_watermark_owner")
+	member := createSecurityUser(t, "read_group_watermark_member")
+	group, err := groupSvc.CreateGroup("read_group_watermark", "", owner.ID)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := groupSvc.JoinGroup(group.ID, member.ID); err != nil {
+		t.Fatalf("join group: %v", err)
+	}
+
+	msg := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: owner.ID,
+		GroupID:    &group.ID,
+		Content:    "group watermark",
+	}
+	if err := model.DB.Create(msg).Error; err != nil {
+		t.Fatalf("create group message: %v", err)
+	}
+
+	chatSvc.MarkRead(&ws.ReadReceiptPayload{
+		FromUserID:    member.ID,
+		GroupID:       group.ID,
+		LastReadMsgID: msg.ID,
+	})
+
+	var read model.MessageRead
+	if err := model.DB.Where("user_id = ? AND conversation_type = ? AND conversation_id = ?", member.ID, model.ConversationGroup, group.ID).
+		First(&read).Error; err != nil {
+		t.Fatalf("expected group read record: %v", err)
+	}
+	if read.LastReadMsgID != msg.ID {
+		t.Fatalf("expected last read id %d, got %d", msg.ID, read.LastReadMsgID)
+	}
+}
+
+func TestGetGroupReadsRejectsNonMember(t *testing.T) {
+	chatSvc, groupSvc := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "reads_group_owner")
+	outsider := createSecurityUser(t, "reads_group_outsider")
+	group, err := groupSvc.CreateGroup("reads_group", "", owner.ID)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+
+	if _, err := chatSvc.GetGroupReads(outsider.ID, group.ID); err == nil {
+		t.Fatal("expected non-member group reads query to be rejected")
 	}
 }
 
