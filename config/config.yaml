@@ -14,3 +14,17 @@ jwt:
 log:
   level: "debug"     # debug | info | warn | error
   file: "logs/aim.log"
+
+ai:
+  enabled: false
+  base_url: ""       # 例如 https://api.deepseek.com/v1 或 http://localhost:11434/v1
+  api_key: ""        # 建议留空，优先从 api_key_env 指定的环境变量读取
+  api_key_env: "AIM_AI_API_KEY"
+  default_model: ""
+  default_bot_username: "ai_assistant"
+  default_bot_nickname: "AI助手"
+  system_prompt: "你是 AIM 内置 AI 助手，回答要简洁、准确，并遵守所在聊天场景。"
+  timeout_seconds: 60
+  max_context_messages: 12
+  temperature: 0.7
+  max_tokens: 1024
