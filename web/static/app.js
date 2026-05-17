@@ -178,12 +178,14 @@ function sendTyping(peerId, groupId, isTyping) {
 // ========================================
 // 已读回执发送
 // ========================================
-function sendReadReceipt(peerUserId, groupId, messageIds) {
-    if (!messageIds || messageIds.length === 0) return;
+function sendReadReceipt(peerUserId, groupId, messageIds, lastReadMsgId) {
+    var ids = messageIds || [];
+    if (ids.length === 0 && !lastReadMsgId) return;
     sendWS('read_receipt', {
         peer_user_id: peerUserId || 0,
         group_id: groupId || 0,
-        message_ids: messageIds
+        message_ids: ids,
+        last_read_msg_id: lastReadMsgId || 0
     });
 }
 
