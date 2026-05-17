@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"AIM/config"
 	"AIM/internal/handler"
@@ -17,6 +18,7 @@ import (
 	"AIM/internal/model"
 	"AIM/internal/service"
 	"AIM/internal/ws"
+	aipkg "AIM/pkg/ai"
 	"AIM/pkg/storage"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +49,32 @@ func main() {
 	contactSvc := &service.ContactGroupService{}
 	chatSvc := &service.ChatService{Hub: hub}
 	settingsSvc := &service.SettingsService{}
+	if cfg.AI.Enabled {
+		aiClient := aipkg.NewOpenAICompatibleClient(time.Duration(cfg.AI.TimeoutSeconds) * time.Second)
+		aiSvc := service.NewAIService(aiClient, chatSvc, service.AIConfig{
+			BaseURL:            cfg.AI.BaseURL,
+			APIKey:             cfg.AI.APIKey,
+			DefaultModel:       cfg.AI.DefaultModel,
+			DefaultBotUsername: cfg.AI.DefaultBotUsername,
+			DefaultBotNickname: cfg.AI.DefaultBotNickname,
+			SystemPrompt:       cfg.AI.SystemPrompt,
+			Timeout:            time.Duration(cfg.AI.TimeoutSeconds) * time.Second,
+			MaxContextMessages: cfg.AI.MaxContextMessages,
+			Temperature:        cfg.AI.Temperature,
+			MaxTokens:          cfg.AI.MaxTokens,
+		})
+		chatSvc.AIResponder = aiSvc
+		if strings.TrimSpace(cfg.AI.BaseURL) != "" && strings.TrimSpace(cfg.AI.DefaultModel) != "" {
+			bot, err := aiSvc.EnsureDefaultBot()
+			if err != nil {
+				log.Printf("[ai] 默认 AI 用户初始化失败: %v", err)
+			} else {
+				log.Printf("[ai] 默认 AI 用户已就绪: id=%d username=%s", bot.ID, bot.Username)
+			}
+		} else {
+			log.Println("[ai] AI 服务已启用，未配置 base_url/default_model，跳过默认 AI 用户创建")
+		}
+	}
 
 	// 启动消息消费协程：从 Hub.OnMessage 读取，经 ChatService 持久化并路由
 	go func() {
