@@ -249,6 +249,44 @@ function sidebarItemHTML(key, type, targetId, avatarChar, name, previewMsg, unre
     '</div>';
 }
 
+function ensureConversationForMessage(key, msg) {
+    if (conversations.find(function(c) { return c.key === key; })) return;
+
+    if (key.startsWith('group:')) {
+        var gid = parseInt(key.split(':')[1]);
+        var group = sidebarGroups.find(function(g) { return g.id === gid; });
+        var groupName = group ? group.name : ('群组' + gid);
+        conversations.push({
+            key: key,
+            type: 'group',
+            targetId: gid,
+            name: groupName,
+            avatarChar: groupName.charAt(0)
+        });
+        return;
+    }
+
+    if (key.startsWith('user:')) {
+        var uid = parseInt(key.split(':')[1]);
+        var friend = sidebarFriends.find(function(f) { return f.friend_id === uid; });
+        var userName = '';
+        if (friend) {
+            userName = friend.remark || friend.nickname || friend.username || ('用户' + uid);
+        } else if (msg.from_user && msg.from_user_id === uid) {
+            userName = msg.from_user.nickname || msg.from_user.username || ('用户' + uid);
+        } else {
+            userName = '用户' + uid;
+        }
+        conversations.push({
+            key: key,
+            type: 'user',
+            targetId: uid,
+            name: userName,
+            avatarChar: userName.charAt(0)
+        });
+    }
+}
+
 function updateSidebarBadge(key) {
     var el = document.querySelector('.sidebar-item[data-key="' + key + '"]');
     if (!el) return;
@@ -837,6 +875,7 @@ onMessage = function(msg) {
         key = 'broadcast';
     }
 
+    ensureConversationForMessage(key, msg);
     lastMessages.set(key, msg);
     lastTimestamps.set(key, new Date(msg.created_at || Date.now()));
     updateSidebarPreview(key, msg);
@@ -871,13 +910,16 @@ onMessage = function(msg) {
         if (key === activeTabKey) {
             tab.messagesEl.innerHTML += renderOneMessage(msg);
             tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
-        } else { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); updateTabBadge(key); }
-    } else { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); }
+        } else if (msg.from_user_id !== myId) { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); updateTabBadge(key); }
+    } else if (msg.from_user_id !== myId) { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); }
 
     // 写入本地 IndexedDB
     msgStore.putMessage(key, msg);
     msgStore.setLastMsgID(key, msg.id);
 
+    sortConversations();
+    renderSidebar();
+    updateOnlineDots();
     updateSidebarBadge(key);
     if (key === activeTabKey && msg.from_user_id !== getUserId()) {
         sendReadReceiptForTab(key);
