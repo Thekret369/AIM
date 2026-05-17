@@ -199,6 +199,59 @@ func TestEnsureDefaultBotCreatesAIUser(t *testing.T) {
 	assertAcceptedFriendPair(t, existingUser.ID, bot.ID)
 }
 
+func TestEnsureDefaultBotAllowsEmptyProviderConfig(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{
+		DefaultBotUsername: "blue_ai",
+		DefaultBotNickname: "蓝妹",
+	})
+
+	bot, err := aiSvc.EnsureDefaultBot()
+	if err != nil {
+		t.Fatalf("ensure default bot without provider config: %v", err)
+	}
+	if !bot.IsAI || bot.Nickname != "蓝妹" {
+		t.Fatalf("unexpected bot: %+v", bot)
+	}
+
+	var cfg model.AIBot
+	if err := model.DB.Where("user_id = ? AND is_system = ?", bot.ID, true).First(&cfg).Error; err != nil {
+		t.Fatalf("expected system ai bot config: %v", err)
+	}
+	if cfg.BaseURL != "" || cfg.Model != "" {
+		t.Fatalf("expected empty provider config, got %+v", cfg)
+	}
+}
+
+func TestUnconfiguredDefaultBotRepliesWithSetupHint(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	user := createSecurityUser(t, "unconfigured_ai_user")
+	fake := &fakeAIClient{reply: "should not call", calls: make(chan ai.ChatRequest, 1)}
+	aiSvc := NewAIService(fake, chatSvc, AIConfig{
+		DefaultBotUsername: "unconfigured_ai",
+		DefaultBotNickname: "蓝妹",
+		Timeout:            time.Second,
+	})
+	bot, err := aiSvc.EnsureDefaultBot()
+	if err != nil {
+		t.Fatalf("ensure default bot: %v", err)
+	}
+	chatSvc.AIResponder = aiSvc
+
+	toBot := bot.ID
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: user.ID,
+		ToUserID:   &toBot,
+		Content:    "你好",
+	}); err != nil {
+		t.Fatalf("send unconfigured ai message: %v", err)
+	}
+
+	assertNoAIRequest(t, fake.calls)
+	waitMessageContent(t, bot.ID, "AI 尚未配置，请在后端补充 API 地址和模型后再使用。")
+}
+
 func TestRegisterAddsSystemAIBotFriend(t *testing.T) {
 	chatSvc, _ := setupChatSecurityTest(t)
 	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{
