@@ -2017,10 +2017,17 @@ body.theme-dark .no-chat-placeholder {
 
 .ai-modal-content {
 	width: min(760px, calc(100vw - 40px));
+	padding-bottom: 0;
 }
 
 .ai-modal-actions {
-	margin-top: 16px;
+	position: sticky;
+	right: 0;
+	bottom: 0;
+	margin: 12px -24px 0;
+	padding: 12px 24px 18px;
+	border-top: 1px solid var(--border-light);
+	background: var(--surface);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2191,5 +2198,358 @@ body.theme-dark .no-chat-placeholder {
 
 	.ai-form-grid {
 		grid-template-columns: 1fr;
+	}
+}
+
+/* ========================================
+   AIM 体验优先 UI：页面壳层、空状态和管理弹窗
+   ======================================== */
+
+.page-shell {
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+}
+
+.page-header {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 18px;
+	padding: 4px 0 2px;
+}
+
+.page-header h1 {
+	margin: 0;
+	color: var(--text);
+	font-size: 26px;
+	font-weight: 850;
+	line-height: 1.15;
+	letter-spacing: 0;
+}
+
+.page-header p {
+	margin-top: 6px;
+	color: var(--text-muted);
+	font-size: 13px;
+	font-weight: 650;
+}
+
+.page-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.empty-state {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 88px;
+	padding: 18px;
+	border: 1px dashed var(--border);
+	border-radius: var(--radius);
+	background: var(--surface-hover);
+	color: var(--text-muted);
+	font-size: 13px;
+	font-weight: 700;
+	text-align: center;
+}
+
+.empty-state.compact {
+	min-height: 44px;
+	padding: 10px 12px;
+}
+
+.sidebar-empty {
+	margin: 10px;
+	min-height: 72px;
+}
+
+.text-link {
+	color: var(--link-color);
+	text-decoration: none;
+	font-weight: 700;
+}
+
+.text-link:hover {
+	text-decoration: underline;
+}
+
+.compact-row,
+.member-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--border-light);
+	color: var(--text-secondary);
+}
+
+.compact-row:last-child,
+.member-row:last-child {
+	border-bottom: 0;
+}
+
+.member-toolbar {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 10px;
+	margin: 14px 0 8px;
+}
+
+.member-toolbar input {
+	width: 100%;
+}
+
+.member-actions {
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.item-dnd {
+	display: inline-flex;
+	margin-right: 4px;
+	font-size: 10px;
+	line-height: 1;
+	vertical-align: 1px;
+}
+
+.group-detail-btn {
+	font-size: 12px;
+	padding: 5px 10px;
+}
+
+.gp-text {
+	color: var(--text-secondary);
+	font-size: 14px;
+	line-height: 1.6;
+	white-space: pre-wrap;
+}
+
+.gp-error {
+	padding: 16px;
+	color: var(--danger);
+	text-align: center;
+}
+
+.gp-add-member {
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+.gp-add-member .gp-input {
+	width: 140px;
+	margin: 0;
+}
+
+.gp-btn-secondary {
+	background: #1f5f74;
+	color: #ffffff;
+}
+
+.gp-btn-muted {
+	background: var(--text-muted);
+	color: #ffffff;
+}
+
+.announce-item {
+	margin-bottom: 8px;
+	padding: 10px;
+	border-bottom: 1px solid var(--border-light);
+}
+
+.announce-meta {
+	margin-top: 6px;
+	color: var(--text-muted);
+	font-size: 11px;
+}
+
+.profile-edit-card {
+	padding: 22px;
+	border: 1px solid var(--border-light);
+	border-radius: var(--radius);
+	background: var(--surface);
+	box-shadow: var(--shadow-sm);
+}
+
+.profile-edit-card h2 {
+	margin-bottom: 16px;
+}
+
+.auth-card {
+	position: relative;
+	overflow: hidden;
+}
+
+.auth-card::before {
+	content: "";
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: 5px;
+	background: linear-gradient(90deg, var(--primary), var(--accent), var(--success));
+}
+
+.auth-brand {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	margin-bottom: 28px;
+}
+
+.brand-mark {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 52px;
+	height: 52px;
+	border-radius: 14px;
+	background: linear-gradient(135deg, var(--primary), var(--accent));
+	color: #ffffff;
+	font-size: 14px;
+	font-weight: 850;
+	box-shadow: 0 14px 28px rgba(37, 99, 235, 0.22);
+}
+
+.auth-brand h1 {
+	margin: 0;
+	text-align: left;
+	color: var(--text);
+	font-size: 28px;
+	line-height: 1;
+}
+
+.auth-brand p {
+	margin-top: 8px;
+	color: var(--text-muted);
+	font-size: 13px;
+	font-weight: 700;
+}
+
+.chat-sidebar-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 16px 14px 10px;
+	border-bottom: 1px solid var(--border-light);
+}
+
+.chat-sidebar-head h2 {
+	margin: 0;
+	color: var(--text);
+	font-size: 18px;
+	font-weight: 850;
+	line-height: 1.2;
+}
+
+.chat-sidebar-head p {
+	margin-top: 3px;
+	color: var(--text-muted);
+	font-size: 12px;
+	font-weight: 650;
+}
+
+.chat-sidebar-head .btn {
+	flex-shrink: 0;
+}
+
+.ai-page-head {
+	align-items: flex-end;
+}
+
+.ai-modal-content .form-group {
+	margin-bottom: 10px;
+}
+
+.ai-modal-content .form-group input,
+.ai-modal-content .form-group select {
+	min-height: 38px;
+}
+
+.ai-modal-content .form-group textarea {
+	min-height: 96px;
+}
+
+.ai-form-grid {
+	gap: 10px 12px;
+}
+
+.contact-item .btn {
+	flex-shrink: 0;
+}
+
+.contact-name-line {
+	display: inline;
+}
+
+.online-dot {
+	display: none;
+	width: 8px;
+	height: 8px;
+	margin-right: 6px;
+	border-radius: 50%;
+	background: var(--success);
+	box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
+	vertical-align: middle;
+}
+
+.online-dot.is-online {
+	display: inline-block;
+}
+
+@media (max-width: 900px) {
+	.page-header {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.page-actions {
+		justify-content: flex-start;
+	}
+
+	.chat-sidebar-head {
+		padding: 12px 12px 8px;
+	}
+}
+
+@media (max-width: 640px) {
+	.page-header h1 {
+		font-size: 22px;
+	}
+
+	.page-actions .btn {
+		flex: 1 1 auto;
+	}
+
+	.member-toolbar {
+		grid-template-columns: 1fr;
+	}
+
+	.member-row {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.member-actions {
+		justify-content: flex-start;
+	}
+
+	.auth-brand {
+		align-items: flex-start;
+	}
+
+	.ai-modal-actions {
+		margin-right: -18px;
+		margin-left: -18px;
+		padding-right: 18px;
+		padding-left: 18px;
 	}
 }

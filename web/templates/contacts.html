@@ -18,7 +18,17 @@
         <a href="/settings">设置</a>
     </div>
 </div>
-<div class="container">
+<div class="container page-shell contacts-page">
+    <div class="page-header">
+        <div>
+            <h1>联系人</h1>
+            <p>好友与申请</p>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" onclick="showAddFriend()">添加好友</button>
+            <button class="btn" onclick="showGroupMgr()">分组管理</button>
+        </div>
+    </div>
     <div class="section">
         <h2>好友列表</h2>
         <div id="friendList" class="contact-list">加载中...</div>
@@ -26,10 +36,6 @@
     <div class="section">
         <h2>待处理申请</h2>
         <div id="pendingList" class="contact-list">加载中...</div>
-    </div>
-    <div class="section">
-        <button class="btn btn-primary" onclick="showAddFriend()">添加好友</button>
-        <button class="btn" onclick="showGroupMgr()">分组管理</button>
     </div>
 </div>
 
@@ -73,15 +79,15 @@ async function loadFriends() {
         const data = await api('GET', '/friends');
         const list = document.getElementById('friendList');
         if (!data.friends || data.friends.length === 0) {
-            list.innerHTML = '<div style="padding:12px;color:#888">暂无好友</div>';
+            list.innerHTML = '<div class="empty-state">暂无好友</div>';
             return;
         }
         list.innerHTML = data.friends.map(f => {
             const remark = f.remark || f.nickname || f.username || ('用户' + f.friend_id);
-            var onlineDot = onlineUsers.has(f.friend_id) ? '<span class="online-dot" style="display:inline-block;width:8px;height:8px;background:#4caf50;border-radius:50%;margin-right:6px;vertical-align:middle"></span>' : '';
+            var onlineDot = '<span class="online-dot' + (onlineUsers.has(f.friend_id) ? ' is-online' : '') + '"></span>';
             return `<div class="contact-item" data-user-id="${f.friend_id}" onclick="window.location.href='/chat?peer=${f.friend_id}'">
                 <div class="avatar">${remark[0]}</div>
-                <div class="info">${onlineDot}<div class="name" style="display:inline">${remark}</div><div class="remark">${f.note || ''}</div></div>
+                <div class="info">${onlineDot}<div class="name contact-name-line">${remark}</div><div class="remark">${f.note || ''}</div></div>
                 <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteFriend(${f.friend_id})">删除</button>
             </div>`;
         }).join('');
@@ -94,7 +100,7 @@ async function loadPending() {
         const data = await api('GET', '/friends/pending');
         const list = document.getElementById('pendingList');
         if (!data.requests || data.requests.length === 0) {
-            list.innerHTML = '<div style="padding:12px;color:#888">暂无待处理申请</div>';
+            list.innerHTML = '<div class="empty-state">暂无待处理申请</div>';
             return;
         }
         list.innerHTML = data.requests.map(r => {
@@ -145,10 +151,10 @@ async function showGroupMgr() {
     const data = await api('GET', '/contact-groups');
     const list = document.getElementById('groupList');
     if (!data.groups || data.groups.length === 0) {
-        list.innerHTML = '<div style="color:#888">暂无分组</div>';
+        list.innerHTML = '<div class="empty-state compact">暂无分组</div>';
     } else {
         list.innerHTML = data.groups.map(g => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
+            <div class="compact-row">
                 <span>${g.name}</span>
                 <button class="btn btn-danger btn-sm" onclick="deleteGroup(${g.id})">删除</button>
             </div>
@@ -187,11 +193,10 @@ function updateOnlineDots() {
         if (!dot) {
             dot = document.createElement('span');
             dot.className = 'online-dot';
-            dot.style.cssText = 'display:inline-block;width:8px;height:8px;background:#4caf50;border-radius:50%;margin-right:6px;vertical-align:middle';
             var nameEl = el.querySelector('.name');
             if (nameEl) nameEl.parentNode.insertBefore(dot, nameEl);
         }
-        dot.style.display = onlineUsers.has(uid) ? 'inline-block' : 'none';
+        dot.classList.toggle('is-online', onlineUsers.has(uid));
     });
 }
 
