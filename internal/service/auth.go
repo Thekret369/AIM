@@ -52,6 +52,10 @@ func (s *AuthService) Login(username, password string) (string, *model.User, err
 		return "", nil, err
 	}
 
+	if user.IsAI {
+		return "", nil, errors.New("AI 用户不支持网页登录")
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return "", nil, errors.New("用户名或密码错误")
 	}
