@@ -9,10 +9,10 @@ import "encoding/json"
 type WSMessageType string
 
 const (
-	WSMChat         WSMessageType = "chat"          // 聊天消息，Payload 为 model.Message JSON
-	WSMTyping       WSMessageType = "typing"        // 输入状态
-	WSMReadReceipt  WSMessageType = "read_receipt"  // 已读回执
-	WSMStatus       WSMessageType = "status"        // 在线状态变更
+	WSMChat        WSMessageType = "chat"         // 聊天消息，Payload 为 model.Message JSON
+	WSMTyping      WSMessageType = "typing"       // 输入状态
+	WSMReadReceipt WSMessageType = "read_receipt" // 已读回执
+	WSMStatus      WSMessageType = "status"       // 在线状态变更
 )
 
 // WSMessage 所有 WS 消息的外层包装
@@ -25,16 +25,17 @@ type WSMessage struct {
 type TypingPayload struct {
 	FromUserID uint `json:"from_user_id"`
 	ToUserID   uint `json:"to_user_id,omitempty"` // 单聊接收方
-	GroupID    uint `json:"group_id,omitempty"`    // 群聊 ID
+	GroupID    uint `json:"group_id,omitempty"`   // 群聊 ID
 	IsTyping   bool `json:"is_typing"`
 }
 
 // ReadReceiptPayload 已读回执
 type ReadReceiptPayload struct {
-	FromUserID  uint   `json:"from_user_id"`
-	PeerUserID  uint   `json:"peer_user_id,omitempty"` // 单聊时标记对方消息已读
-	GroupID     uint   `json:"group_id,omitempty"`     // 群聊时标记群消息已读
-	MessageIDs  []uint `json:"message_ids"`
+	FromUserID    uint   `json:"from_user_id"`
+	PeerUserID    uint   `json:"peer_user_id,omitempty"`     // 单聊时标记对方消息已读
+	GroupID       uint   `json:"group_id,omitempty"`         // 群聊时标记群消息已读
+	MessageIDs    []uint `json:"message_ids,omitempty"`      // 兼容旧协议：逐条消息 ID
+	LastReadMsgID uint   `json:"last_read_msg_id,omitempty"` // 新协议：已读高水位
 }
 
 // StatusPayload 在线状态
