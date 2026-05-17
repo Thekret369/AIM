@@ -35,6 +35,7 @@ func setupChatSecurityTest(t *testing.T) (*ChatService, *GroupService) {
 		&model.GroupMember{},
 		&model.Announcement{},
 		&model.MessageRead{},
+		&model.AIBot{},
 	); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}
