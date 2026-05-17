@@ -49,9 +49,10 @@ func main() {
 	contactSvc := &service.ContactGroupService{}
 	chatSvc := &service.ChatService{Hub: hub}
 	settingsSvc := &service.SettingsService{}
+	var aiSvc *service.AIService
 	if cfg.AI.Enabled {
 		aiClient := aipkg.NewOpenAICompatibleClient(time.Duration(cfg.AI.TimeoutSeconds) * time.Second)
-		aiSvc := service.NewAIService(aiClient, chatSvc, service.AIConfig{
+		aiSvc = service.NewAIService(aiClient, chatSvc, service.AIConfig{
 			BaseURL:            cfg.AI.BaseURL,
 			APIKey:             cfg.AI.APIKey,
 			DefaultModel:       cfg.AI.DefaultModel,
@@ -104,6 +105,7 @@ func main() {
 	contactH := &handler.ContactGroupHandler{Svc: contactSvc}
 	chatH := &handler.ChatHandler{Svc: chatSvc, Hub: hub, JWTSecret: cfg.JWT.Secret}
 	settingsH := &handler.SettingsHandler{Svc: settingsSvc}
+	aiH := &handler.AIHandler{Svc: aiSvc}
 
 	// 初始化文件上传器
 	uploader := storage.NewLocalUploader("./data/uploads")
@@ -149,6 +151,12 @@ func main() {
 		auth.GET("/friends", friendH.FriendList)
 		auth.GET("/friends/pending", friendH.PendingRequests)
 		auth.GET("/friends/online", friendH.GetOnlineFriends)
+
+		// AI 助手管理
+		auth.GET("/ai/bots", aiH.ListBots)
+		auth.POST("/ai/bots", aiH.CreateBot)
+		auth.PUT("/ai/bots/:id", aiH.UpdateBot)
+		auth.DELETE("/ai/bots/:id", aiH.DeleteBot)
 
 		// 联系人分组
 		auth.POST("/contact-groups", contactH.Create)
@@ -204,6 +212,9 @@ func main() {
 	})
 	r.GET("/groups", func(c *gin.Context) {
 		c.HTML(200, "groups.html", nil)
+	})
+	r.GET("/ai", func(c *gin.Context) {
+		c.HTML(200, "ai.html", nil)
 	})
 	r.GET("/profile", func(c *gin.Context) {
 		c.HTML(200, "profile.html", nil)
