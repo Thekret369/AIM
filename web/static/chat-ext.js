@@ -40,8 +40,8 @@ function injectReadMark(html, msg) {
     var tab = chatTabs.get(activeTabKey);
     var isGroup = tab && tab.type === 'group';
 
-    // 群聊：所有消息都显示已读扇形图
-    if (isGroup) {
+    // 群聊：只在自己发送的消息上显示已读人数
+    if (isGroup && isMe) {
         return html.replace('</div>', renderReadPie(msg, tab) + '</div>');
     }
     // 单聊：仅自己发的消息显示已读/未读
@@ -58,10 +58,10 @@ function renderReadPie(msg, tab) {
     var readCount = readSet ? readSet.size : 0;
     var members = groupMembersMap.get(tab ? tab.targetId : 0) || [];
     // 排除消息发送者（发送者自己不能已读自己的消息）
-    var total = members.length - 1;
-    if (total < 1) total = 1;
+    var total = Number.isInteger(msg.recipient_count) ? msg.recipient_count : (members.length - 1);
+    if (total < 0) total = 0;
 
-    var pct = Math.round(readCount / total * 100);
+    var pct = total > 0 ? Math.round(readCount / total * 100) : 0;
     var green = '#4caf50', gray = '#e0e0e0';
     var pieStyle = 'width:14px;height:14px;border-radius:50%;display:inline-block;vertical-align:middle;margin-left:4px;' +
         'background:conic-gradient(' + green + ' 0% ' + pct + '%, ' + gray + ' ' + pct + '% 100%)';
@@ -109,11 +109,22 @@ onReadReceipt = function(p) {
 
     var ids = p.message_ids || [];
     if (isGroup) {
-        // 群聊：累计每个消息的已读用户
-        for (var i = 0; i < ids.length; i++) {
-            var mid = ids[i];
-            if (!messageReadBy.has(mid)) messageReadBy.set(mid, new Set());
-            messageReadBy.get(mid).add(p.from_user_id);
+        var lastReadMsgId = p.last_read_msg_id || 0;
+        if (lastReadMsgId > 0) {
+            for (var i = 0; i < tab.messages.length; i++) {
+                var msg = tab.messages[i];
+                if (msg.id <= lastReadMsgId && msg.from_user_id !== p.from_user_id) {
+                    if (!messageReadBy.has(msg.id)) messageReadBy.set(msg.id, new Set());
+                    messageReadBy.get(msg.id).add(p.from_user_id);
+                }
+            }
+        } else {
+            // 群聊：兼容旧协议，累计每个消息的已读用户
+            for (var i = 0; i < ids.length; i++) {
+                var mid = ids[i];
+                if (!messageReadBy.has(mid)) messageReadBy.set(mid, new Set());
+                messageReadBy.get(mid).add(p.from_user_id);
+            }
         }
     } else {
         // 单聊：标记 _read 并持久化到本地 IndexedDB
@@ -144,9 +155,9 @@ function refreshReadMarks(tab) {
                 var readSet = messageReadBy.get(mid);
                 var readCount = readSet ? readSet.size : 0;
                 var members = groupMembersMap.get(tab.targetId) || [];
-                var total = members.length - 1;
-                if (total < 1) total = 1;
-                var pct = Math.round(readCount / total * 100);
+                var total = Number.isInteger(msg.recipient_count) ? msg.recipient_count : (members.length - 1);
+                if (total < 0) total = 0;
+                var pct = total > 0 ? Math.round(readCount / total * 100) : 0;
                 pie.style.background = 'conic-gradient(#4caf50 0% ' + pct + '%, #e0e0e0 ' + pct + '% 100%)';
                 if (countEl && countEl.classList.contains('read-count')) {
                     countEl.textContent = readCount + '/' + total;
@@ -197,14 +208,15 @@ function sendReadReceiptForTab(key) {
     var tab = chatTabs.get(key);
     if (!tab) return;
     var unreadIds = [];
+    var groupLastReadMsgId = 0;
     for (var i = 0; i < tab.messages.length; i++) {
         var m = tab.messages[i];
         if (m.from_user_id !== getUserId()) {
             if (tab.type === 'group') {
-                // 群聊：排除自己已读过的
+                // 群聊使用已读高水位，只发送最后一条已读消息 ID
                 var readSet = messageReadBy.get(m.id);
                 if (!readSet || !readSet.has(getUserId())) {
-                    unreadIds.push(m.id);
+                    if (m.id > groupLastReadMsgId) groupLastReadMsgId = m.id;
                     if (!readSet) { readSet = new Set(); messageReadBy.set(m.id, readSet); }
                     readSet.add(getUserId());
                 }
@@ -219,9 +231,9 @@ function sendReadReceiptForTab(key) {
             sendReadReceipt(tab.targetId, 0, unreadIds);
             // 本端标记持久化到 IndexedDB
             if (typeof msgStore !== 'undefined') msgStore.markRead(key, unreadIds);
-        } else if (tab.type === 'group') {
-            sendReadReceipt(0, tab.targetId, unreadIds);
         }
+    } else if (tab.type === 'group' && groupLastReadMsgId > 0) {
+        sendReadReceipt(0, tab.targetId, [], groupLastReadMsgId);
     }
 }
 
