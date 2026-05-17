@@ -523,10 +523,10 @@ func (s *AIService) generateReply(parent context.Context, bot model.User, source
 		return "", err
 	}
 	if runtime.BaseURL == "" {
-		return "", errors.New("ai endpoint is empty")
+		return "AI 尚未配置，请在后端补充 API 地址和模型后再使用。", nil
 	}
 	if runtime.Model == "" {
-		return "", errors.New("ai model is empty")
+		return "AI 尚未配置，请在后端补充 API 地址和模型后再使用。", nil
 	}
 
 	messages, err := s.buildPrompt(runtime, source)
