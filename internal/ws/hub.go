@@ -214,7 +214,7 @@ func (h *Hub) SendTypingToUsers(userIDs []uint, payload *TypingPayload) {
 }
 
 func (h *Hub) SendReadReceiptToUsers(userIDs []uint, payload *ReadReceiptPayload) {
-	clients := h.snapshotUsersClients(userIDs, 0)
+	clients := h.snapshotUsersClients(userIDs, payload.FromUserID)
 	if len(clients) == 0 {
 		return
 	}
