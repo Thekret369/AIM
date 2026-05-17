@@ -14,6 +14,7 @@
         <a href="/contacts">联系人</a>
         <a href="/chat">消息</a>
         <a href="/groups">群组</a>
+        <a href="/ai">AI助手</a>
         <a href="/settings">设置</a>
     </div>
 </div>
@@ -85,6 +86,7 @@ navUserEl.href = '/profile';
 // ========================================
 let sidebarFriends = [];
 let sidebarGroups = [];
+let sidebarAIBots = [];
 let conversations = [];
 let lastTimestamps = new Map();
 let chatTabs = new Map();
@@ -122,6 +124,13 @@ async function loadGroups() {
     } catch(e) { sidebarGroups = []; }
 }
 
+async function loadAIBots() {
+    try {
+        const data = await api('GET', '/ai/bots');
+        sidebarAIBots = data.bots || [];
+    } catch(e) { sidebarAIBots = []; }
+}
+
 // 预加载所有群的 DND 状态和成员列表
 async function loadGroupMetadata() {
     var promises = sidebarGroups.map(function(g) {
@@ -137,7 +146,12 @@ async function loadGroupMetadata() {
 // ========================================
 function buildConversations() {
     conversations = [];
-    conversations.push({
+    function pushConversation(conv) {
+        if (conversations.find(function(c) { return c.key === conv.key; })) return;
+        conversations.push(conv);
+    }
+
+    pushConversation({
         key: 'broadcast',
         type: 'broadcast',
         targetId: 0,
@@ -151,8 +165,16 @@ function buildConversations() {
             name: name, avatarChar: name.charAt(0)
         });
     });
+    sidebarAIBots.forEach(function(bot) {
+        if (bot.status === 'disabled') return;
+        var name = getAIBotName(bot);
+        pushConversation({
+            key: 'user:' + bot.user_id, type: 'user', targetId: bot.user_id,
+            name: name, avatarChar: 'AI'
+        });
+    });
     sidebarGroups.forEach(function(g) {
-        conversations.push({
+        pushConversation({
             key: 'group:' + g.id, type: 'group', targetId: g.id,
             name: g.name, avatarChar: g.name.charAt(0)
         });
@@ -269,9 +291,12 @@ function ensureConversationForMessage(key, msg) {
     if (key.startsWith('user:')) {
         var uid = parseInt(key.split(':')[1]);
         var friend = sidebarFriends.find(function(f) { return f.friend_id === uid; });
+        var bot = findAIBotByUserID(uid);
         var userName = '';
         if (friend) {
             userName = friend.remark || friend.nickname || friend.username || ('用户' + uid);
+        } else if (bot) {
+            userName = getAIBotName(bot);
         } else if (msg.from_user && msg.from_user_id === uid) {
             userName = msg.from_user.nickname || msg.from_user.username || ('用户' + uid);
         } else {
@@ -285,6 +310,14 @@ function ensureConversationForMessage(key, msg) {
             avatarChar: userName.charAt(0)
         });
     }
+}
+
+function findAIBotByUserID(userID) {
+    return sidebarAIBots.find(function(bot) { return bot.user_id === userID; });
+}
+
+function getAIBotName(bot) {
+    return bot.nickname || bot.username || ('AI用户' + bot.user_id);
 }
 
 function updateSidebarBadge(key) {
@@ -1410,7 +1443,7 @@ async function loadOnlineStatus() {
 // 初始化
 // ========================================
 async function init() {
-    await Promise.all([loadFriends(), loadGroups(), loadOnlineStatus()]);
+    await Promise.all([loadFriends(), loadGroups(), loadAIBots(), loadOnlineStatus()]);
     await loadGroupMetadata();
     buildConversations();
     await loadLastMessages();
