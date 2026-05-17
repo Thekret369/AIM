@@ -172,6 +172,7 @@ func TestAIUserCannotLogin(t *testing.T) {
 
 func TestEnsureDefaultBotCreatesAIUser(t *testing.T) {
 	chatSvc, _ := setupChatSecurityTest(t)
+	existingUser := createSecurityUser(t, "default_ai_friend_user")
 	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{
 		BaseURL:            "http://ai.local/v1",
 		DefaultModel:       "test-model",
@@ -195,6 +196,30 @@ func TestEnsureDefaultBotCreatesAIUser(t *testing.T) {
 	if cfg.OwnerID != nil || cfg.Model != "test-model" {
 		t.Fatalf("unexpected system config: %+v", cfg)
 	}
+	assertAcceptedFriendPair(t, existingUser.ID, bot.ID)
+}
+
+func TestRegisterAddsSystemAIBotFriend(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{
+		BaseURL:            "http://ai.local/v1",
+		DefaultModel:       "test-model",
+		DefaultBotUsername: "register_ai",
+		DefaultBotNickname: "注册AI",
+	})
+
+	bot, err := aiSvc.EnsureDefaultBot()
+	if err != nil {
+		t.Fatalf("ensure default bot: %v", err)
+	}
+
+	authSvc := &AuthService{JWTSecret: "test", JWTExpireHrs: 1}
+	user, err := authSvc.Register("register_with_ai", "password123", "新用户")
+	if err != nil {
+		t.Fatalf("register user: %v", err)
+	}
+
+	assertAcceptedFriendPair(t, user.ID, bot.ID)
 }
 
 func TestUserAIBotCRUDDoesNotExposeAPIKey(t *testing.T) {
@@ -365,4 +390,19 @@ func waitMessageContent(t *testing.T, fromUserID uint, content string) *model.Me
 	}
 	t.Fatalf("timed out waiting for message from %d with content %q", fromUserID, content)
 	return nil
+}
+
+func assertAcceptedFriendPair(t *testing.T, userID, friendID uint) {
+	t.Helper()
+
+	var count int64
+	if err := model.DB.Model(&model.FriendRelation{}).
+		Where("((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)) AND status = ?",
+			userID, friendID, friendID, userID, "accepted").
+		Count(&count).Error; err != nil {
+		t.Fatalf("count ai friend pair: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected accepted friend pair between %d and %d, got %d rows", userID, friendID, count)
+	}
 }
