@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIM - AI助手</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="nav">
+    <span>AIM</span>
+    <div>
+        <a href="/profile" id="navUser" class="nav-user-link"></a>
+        <a href="/contacts">联系人</a>
+        <a href="/chat">消息</a>
+        <a href="/groups">群组</a>
+        <a href="/ai">AI助手</a>
+        <a href="/settings">设置</a>
+    </div>
+</div>
+
+<div class="settings-layout ai-layout">
+    <div class="ai-page-head">
+        <h2>AI助手</h2>
+        <button class="btn btn-primary" onclick="openCreateModal()">创建AI助手</button>
+    </div>
+    <div id="aiNotice" class="ai-notice hidden"></div>
+    <div id="aiBotList" class="contact-list ai-bot-list">加载中...</div>
+</div>
+
+<div id="botModal" class="modal">
+    <div class="modal-content ai-modal-content">
+        <h3 id="botModalTitle">创建AI助手</h3>
+        <div class="ai-form-grid">
+            <div class="form-group">
+                <label for="botName">名称</label>
+                <input type="text" id="botName" placeholder="我的AI助手">
+            </div>
+            <div class="form-group">
+                <label for="botAvatar">头像</label>
+                <input type="text" id="botAvatar" placeholder="头像地址或短文本">
+            </div>
+            <div class="form-group">
+                <label for="botBaseURL">API地址</label>
+                <input type="text" id="botBaseURL" placeholder="https://api.openai.com/v1">
+            </div>
+            <div class="form-group">
+                <label for="botModel">模型</label>
+                <input type="text" id="botModel" placeholder="gpt-4o-mini">
+            </div>
+            <div class="form-group">
+                <label for="botAPIKey">API Key</label>
+                <input type="password" id="botAPIKey" autocomplete="new-password">
+            </div>
+            <div class="form-group hidden" id="botStatusGroup">
+                <label for="botStatus">状态</label>
+                <select id="botStatus">
+                    <option value="enabled">启用</option>
+                    <option value="disabled">停用</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="botContextLimit">上下文条数</label>
+                <input type="number" id="botContextLimit" min="1" step="1" value="12">
+            </div>
+            <div class="form-group">
+                <label for="botTemperature">Temperature</label>
+                <input type="number" id="botTemperature" min="0" max="2" step="0.1" value="0.7">
+            </div>
+            <div class="form-group">
+                <label for="botMaxTokens">Max Tokens</label>
+                <input type="number" id="botMaxTokens" min="1" step="1" value="1024">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="botSystemPrompt">系统提示词</label>
+            <textarea id="botSystemPrompt" rows="5"></textarea>
+        </div>
+        <div class="error" id="botFormError"></div>
+        <div class="ai-modal-actions">
+            <button class="btn btn-primary" onclick="saveBot()">保存</button>
+            <button class="btn" onclick="closeBotModal()">取消</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+checkAuth();
+
+let bots = [];
+let editingBot = null;
+
+function loadNavUser() {
+    var el = document.getElementById('navUser');
+    el.textContent = getUserNickname();
+    el.href = '/profile';
+}
+
+async function loadBots() {
+    var list = document.getElementById('aiBotList');
+    var notice = document.getElementById('aiNotice');
+    notice.classList.add('hidden');
+    list.innerHTML = '加载中...';
+
+    try {
+        const data = await api('GET', '/ai/bots');
+        bots = data.bots || [];
+        renderBots();
+    } catch (e) {
+        bots = [];
+        list.innerHTML = '<div style="padding:12px;color:#888">暂无AI助手</div>';
+        notice.textContent = e.message;
+        notice.classList.remove('hidden');
+    }
+}
+
+function renderBots() {
+    var list = document.getElementById('aiBotList');
+    if (bots.length === 0) {
+        list.innerHTML = '<div style="padding:12px;color:#888">暂无AI助手</div>';
+        return;
+    }
+    list.innerHTML = bots.map(function(bot) {
+        var name = bot.nickname || bot.username || ('AI用户' + bot.user_id);
+        var statusClass = bot.status === 'enabled' ? 'enabled' : 'disabled';
+        var statusText = bot.status === 'enabled' ? '启用' : '停用';
+        var ownerText = bot.is_system ? '内置' : '自建';
+        var keyText = bot.api_key_set ? '已保存' : '未设置';
+        var chatDisabled = bot.status === 'enabled' ? '' : ' disabled';
+        var editBtn = bot.can_edit ? '<button class="btn btn-primary btn-sm" onclick="openEditModal(' + bot.id + ')">编辑</button>' : '';
+        var deleteBtn = bot.can_edit ? '<button class="btn btn-danger btn-sm" onclick="deleteBot(' + bot.id + ')">删除</button>' : '';
+        return '<div class="contact-item ai-bot-item">' +
+            '<div class="avatar">' + escapeHtml(bot.is_system ? 'AI' : name.charAt(0)) + '</div>' +
+            '<div class="info">' +
+                '<div class="name">' + escapeHtml(name) + '</div>' +
+                '<div class="remark">模型: ' + escapeHtml(bot.model || '-') + ' | API Key: ' + keyText + '</div>' +
+                '<div class="remark">API: ' + escapeHtml(bot.base_url || '-') + '</div>' +
+                '<div class="ai-pill-row">' +
+                    '<span class="ai-pill">' + ownerText + '</span>' +
+                    '<span class="ai-pill ' + statusClass + '">' + statusText + '</span>' +
+                '</div>' +
+            '</div>' +
+            '<div class="ai-bot-actions">' +
+                '<button class="btn btn-sm" onclick="chatWithBot(' + bot.user_id + ')"' + chatDisabled + '>聊天</button>' +
+                editBtn + deleteBtn +
+            '</div>' +
+        '</div>';
+    }).join('');
+}
+
+function openCreateModal() {
+    editingBot = null;
+    document.getElementById('botModalTitle').textContent = '创建AI助手';
+    document.getElementById('botStatusGroup').classList.add('hidden');
+    setFormValue({
+        nickname: '',
+        avatar: '',
+        base_url: '',
+        model: '',
+        system_prompt: '',
+        context_limit: 12,
+        temperature: 0.7,
+        max_tokens: 1024,
+        status: 'enabled'
+    });
+    document.getElementById('botAPIKey').placeholder = '';
+    document.getElementById('botFormError').textContent = '';
+    document.getElementById('botModal').classList.add('show');
+}
+
+function openEditModal(id) {
+    var bot = bots.find(function(item) { return item.id === id; });
+    if (!bot || !bot.can_edit) return;
+    editingBot = bot;
+    document.getElementById('botModalTitle').textContent = '编辑AI助手';
+    document.getElementById('botStatusGroup').classList.remove('hidden');
+    setFormValue(bot);
+    document.getElementById('botAPIKey').placeholder = '';
+    document.getElementById('botFormError').textContent = '';
+    document.getElementById('botModal').classList.add('show');
+}
+
+function closeBotModal() {
+    document.getElementById('botModal').classList.remove('show');
+}
+
+function setFormValue(bot) {
+    document.getElementById('botName').value = bot.nickname || '';
+    document.getElementById('botAvatar').value = bot.avatar || '';
+    document.getElementById('botBaseURL').value = bot.base_url || '';
+    document.getElementById('botModel').value = bot.model || '';
+    document.getElementById('botAPIKey').value = '';
+    document.getElementById('botSystemPrompt').value = bot.system_prompt || '';
+    document.getElementById('botContextLimit').value = bot.context_limit || 12;
+    document.getElementById('botTemperature').value = (bot.temperature !== undefined && bot.temperature !== null) ? bot.temperature : 0.7;
+    document.getElementById('botMaxTokens').value = bot.max_tokens || 1024;
+    document.getElementById('botStatus').value = bot.status || 'enabled';
+}
+
+function collectFormValue() {
+    var temperature = parseFloat(document.getElementById('botTemperature').value);
+    if (Number.isNaN(temperature)) temperature = 0.7;
+
+    var body = {
+        name: document.getElementById('botName').value.trim(),
+        avatar: document.getElementById('botAvatar').value.trim(),
+        base_url: document.getElementById('botBaseURL').value.trim(),
+        model: document.getElementById('botModel').value.trim(),
+        system_prompt: document.getElementById('botSystemPrompt').value.trim(),
+        context_limit: parseInt(document.getElementById('botContextLimit').value, 10) || 12,
+        temperature: temperature,
+        max_tokens: parseInt(document.getElementById('botMaxTokens').value, 10) || 1024
+    };
+    var apiKey = document.getElementById('botAPIKey').value.trim();
+    if (apiKey) body.api_key = apiKey;
+    if (editingBot) body.status = document.getElementById('botStatus').value;
+    return body;
+}
+
+async function saveBot() {
+    var err = document.getElementById('botFormError');
+    err.textContent = '';
+    var body = collectFormValue();
+    if (!body.name || !body.base_url || !body.model) {
+        err.textContent = '名称、API地址、模型不能为空';
+        return;
+    }
+
+    try {
+        if (editingBot) {
+            await api('PUT', '/ai/bots/' + editingBot.id, body);
+        } else {
+            await api('POST', '/ai/bots', body);
+        }
+        closeBotModal();
+        await loadBots();
+    } catch (e) {
+        err.textContent = e.message;
+    }
+}
+
+async function deleteBot(id) {
+    if (!confirm('确认删除该AI助手？')) return;
+    try {
+        await api('DELETE', '/ai/bots/' + id);
+        await loadBots();
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+function chatWithBot(userID) {
+    window.location.href = '/chat?peer=' + userID;
+}
+
+function escapeHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+}
+
+loadNavUser();
+loadAndApplySettings();
+loadBots();
+</script>
+</body>
+</html>
