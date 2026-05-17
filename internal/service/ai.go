@@ -160,6 +160,11 @@ func (s *AIService) EnsureDefaultBot() (*model.User, error) {
 	if err := s.ensureSystemBotConfig(user.ID); err != nil {
 		return nil, err
 	}
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		return ensureSystemAIFriendForAllUsersTx(tx, user.ID)
+	}); err != nil {
+		return nil, err
+	}
 	return &user, nil
 }
 

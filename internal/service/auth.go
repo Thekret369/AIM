@@ -31,12 +31,18 @@ func (s *AuthService) Register(username, password, nickname string) (*model.User
 		return nil, err
 	}
 
-	user := &model.User{
-		Username: username,
-		Password: string(hash),
-		Nickname: nickname,
-	}
-	if err := model.DB.Create(user).Error; err != nil {
+	var user *model.User
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		user = &model.User{
+			Username: username,
+			Password: string(hash),
+			Nickname: nickname,
+		}
+		if err := tx.Create(user).Error; err != nil {
+			return err
+		}
+		return ensureSystemAIFriendsForUserTx(tx, user.ID)
+	}); err != nil {
 		return nil, err
 	}
 	return user, nil
