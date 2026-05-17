@@ -20,6 +20,12 @@ func setupChatSecurityTest(t *testing.T) (*ChatService, *GroupService) {
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
 	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Message{},
