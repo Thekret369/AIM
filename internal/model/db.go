@@ -37,7 +37,7 @@ func InitDB(dsn string) error {
 
 	// SQLite 需要手动开启外键约束
 	DB.Exec("PRAGMA foreign_keys = ON")
-	if err := ensureIndexes(); err != nil {
+	if err := EnsureIndexes(); err != nil {
 		return err
 	}
 
@@ -45,8 +45,12 @@ func InitDB(dsn string) error {
 	return nil
 }
 
-func ensureIndexes() error {
+func EnsureIndexes() error {
 	statements := []string{
+		"UPDATE message_reads SET conversation_type = 'user', conversation_id = peer_user_id WHERE conversation_type = '' AND peer_user_id IS NOT NULL",
+		"UPDATE message_reads SET conversation_type = 'group', conversation_id = group_id WHERE conversation_type = '' AND group_id IS NOT NULL",
+		"UPDATE message_reads SET last_read_msg_id = (SELECT MAX(mr2.last_read_msg_id) FROM message_reads mr2 WHERE mr2.user_id = message_reads.user_id AND mr2.conversation_type = message_reads.conversation_type AND mr2.conversation_id = message_reads.conversation_id) WHERE conversation_type <> '' AND conversation_id > 0",
+		"DELETE FROM message_reads WHERE conversation_type <> '' AND conversation_id > 0 AND id NOT IN (SELECT MIN(id) FROM message_reads WHERE conversation_type <> '' AND conversation_id > 0 GROUP BY user_id, conversation_type, conversation_id)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_from_to_id ON messages (from_user_id, to_user_id, id)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_to_from_id ON messages (to_user_id, from_user_id, id)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_group_id_id ON messages (group_id, id)",
@@ -54,6 +58,7 @@ func ensureIndexes() error {
 		"CREATE INDEX IF NOT EXISTS idx_messages_to_from_created ON messages (to_user_id, from_user_id, created_at)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_group_created ON messages (group_id, created_at)",
 		"CREATE INDEX IF NOT EXISTS idx_message_reads_user_peer_group ON message_reads (user_id, peer_user_id, group_id)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_message_reads_user_conversation ON message_reads (user_id, conversation_type, conversation_id)",
 		"CREATE INDEX IF NOT EXISTS idx_group_members_group_user ON group_members (group_id, user_id)",
 		"CREATE INDEX IF NOT EXISTS idx_friend_relations_user_friend ON friend_relations (user_id, friend_id)",
 	}
