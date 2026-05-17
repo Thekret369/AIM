@@ -19,10 +19,15 @@
     </div>
 </div>
 
-<div class="settings-layout ai-layout">
-    <div class="ai-page-head">
-        <h2>AI助手</h2>
-        <button class="btn btn-primary" onclick="openCreateModal()">创建AI助手</button>
+<div class="settings-layout ai-layout page-shell">
+    <div class="page-header ai-page-head">
+        <div>
+            <h1>AI助手</h1>
+            <p>助手配置</p>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" onclick="openCreateModal()">创建AI助手</button>
+        </div>
     </div>
     <div id="aiNotice" class="ai-notice hidden"></div>
     <div id="aiBotList" class="contact-list ai-bot-list">加载中...</div>
@@ -101,7 +106,7 @@ async function loadBots() {
     var list = document.getElementById('aiBotList');
     var notice = document.getElementById('aiNotice');
     notice.classList.add('hidden');
-    list.innerHTML = '加载中...';
+    list.innerHTML = '<div class="empty-state">加载中...</div>';
 
     try {
         const data = await api('GET', '/ai/bots');
@@ -109,7 +114,7 @@ async function loadBots() {
         renderBots();
     } catch (e) {
         bots = [];
-        list.innerHTML = '<div style="padding:12px;color:#888">暂无AI助手</div>';
+        list.innerHTML = '<div class="empty-state">暂无AI助手</div>';
         notice.textContent = e.message;
         notice.classList.remove('hidden');
     }
@@ -118,7 +123,7 @@ async function loadBots() {
 function renderBots() {
     var list = document.getElementById('aiBotList');
     if (bots.length === 0) {
-        list.innerHTML = '<div style="padding:12px;color:#888">暂无AI助手</div>';
+        list.innerHTML = '<div class="empty-state">暂无AI助手</div>';
         return;
     }
     list.innerHTML = bots.map(function(bot) {

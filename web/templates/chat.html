@@ -22,6 +22,13 @@
 <div class="chat-layout">
     <!-- 左侧边栏：统一会话列表 -->
     <div class="chat-sidebar">
+        <div class="chat-sidebar-head">
+            <div>
+                <h2>消息</h2>
+                <p>会话列表</p>
+            </div>
+            <a class="btn btn-sm" href="/contacts">联系人</a>
+        </div>
         <div class="sidebar-list" id="sidebarList"></div>
     </div>
 
@@ -245,7 +252,7 @@ function renderSidebar() {
         if (c.type === 'group') dnd = groupDNDMap.get(c.targetId) || false;
         html += sidebarItemHTML(c.key, c.type, c.targetId, c.avatarChar, c.name, preview, unread, ts, dnd);
     });
-    list.innerHTML = html || '<div style="padding:20px;text-align:center;color:#999;">暂无会话</div>';
+    list.innerHTML = html || '<div class="empty-state sidebar-empty">暂无会话</div>';
     list.querySelectorAll('.sidebar-item').forEach(function(el) {
         el.addEventListener('click', function() {
             var key = this.dataset.key, type = this.dataset.type;
@@ -258,10 +265,10 @@ function renderSidebar() {
 
 function sidebarItemHTML(key, type, targetId, avatarChar, name, previewMsg, unread, timestamp, dnd) {
     var activeClass = (key === activeTabKey) ? ' active' : '';
-    var badgeHTML = unread > 0 ? '<span class="badge" style="display:inline-block">' + unread + '</span>' : '';
+    var badgeHTML = unread > 0 ? '<span class="badge">' + unread + '</span>' : '';
     var previewHTML = previewMsg ? getPreviewText(previewMsg).substring(0, 20) : '';
     var timeHTML = timestamp ? '<span class="item-time">' + formatTime(timestamp) + '</span>' : '';
-    var dndIcon = dnd ? '<span class="item-dnd" style="font-size:10px;margin-right:2px">🔕</span>' : '';
+    var dndIcon = dnd ? '<span class="item-dnd">🔕</span>' : '';
     return '<div class="sidebar-item' + activeClass + '" data-key="' + key + '" data-type="' + type + '" data-target="' + targetId + '">' +
         '<div class="avatar">' + escapeHtml(avatarChar) + '</div>' +
         '<div class="item-info">' +
@@ -389,7 +396,7 @@ function createTab(key, type, targetId, name) {
                     '<input class="chat-search-input" type="search" placeholder="搜索消息">' +
                     '<button class="chat-search-btn" type="button">搜索</button>' +
                     '<button class="chat-search-clear hidden" type="button" title="清除搜索">&times;</button>' +
-                    '<button class="btn btn-sm btn-primary group-detail-btn" type="button" style="font-size:12px;padding:2px 10px">群详情</button>' +
+                    '<button class="btn btn-sm btn-primary group-detail-btn" type="button">群详情</button>' +
                 '</div>' +
             '</div>' +
             '<div class="chat-search-results hidden"></div>' +
@@ -642,7 +649,7 @@ async function loadGroupPanel(key) {
         updateDndBtn();
         renderGroupPanelBody();
     } catch(e) {
-        document.getElementById('groupPanelBody').innerHTML = '<div class="gp-section" style="color:#e74c3c;text-align:center;padding:20px">加载失败: ' + escapeHtml(e.message) + '</div>';
+        document.getElementById('groupPanelBody').innerHTML = '<div class="gp-section gp-error">加载失败: ' + escapeHtml(e.message) + '</div>';
     }
 }
 
@@ -684,14 +691,14 @@ function renderGroupInfo() {
 
     var html = '<div class="gp-section"><h3>基本信息</h3>' +
         '<div class="gp-row"><span>群名称</span><span>' + escapeHtml(g.name) + '</span></div>' +
-        '<div class="gp-row"><span>群主</span><span><a href="/profile?user_id=' + g.owner_id + '" style="color:var(--link-color)">' + escapeHtml(ownerName) + '</a></span></div>' +
+        '<div class="gp-row"><span>群主</span><span><a href="/profile?user_id=' + g.owner_id + '" class="text-link">' + escapeHtml(ownerName) + '</a></span></div>' +
         '<div class="gp-row"><span>创建时间</span><span>' + escapeHtml(createdAt) + '</span></div>' +
         '<div class="gp-row"><span>成员数</span><span>' + groupPanelData.members.length + '</span></div>' +
     '</div>';
 
     // 群简介
     html += '<div class="gp-section"><h3>群简介</h3>' +
-        '<div style="color:#666;font-size:14px;white-space:pre-wrap">' + escapeHtml(g.description || '暂无简介') + '</div>' +
+        '<div class="gp-text">' + escapeHtml(g.description || '暂无简介') + '</div>' +
     '</div>';
 
     // 群主可编辑
@@ -701,7 +708,7 @@ function renderGroupInfo() {
             '<input class="gp-input" id="gpEditName" value="' + escapeHtml(g.name) + '" placeholder="输入新群名称">' +
             '<label class="gp-label">群简介</label>' +
             '<input class="gp-input" id="gpEditDesc" value="' + escapeHtml(g.description || '') + '" placeholder="输入群简介">' +
-            '<div class="gp-actions" style="margin-top:8px">' +
+            '<div class="gp-actions">' +
                 '<button class="gp-btn gp-btn-primary" onclick="saveGroupInfo(' + g.id + ')">保存</button>' +
             '</div>' +
         '</div>';
@@ -737,7 +744,7 @@ async function loadGroupAnnouncements() {
         var data = await api('GET', '/groups/' + groupId + '/announcements');
         renderGroupAnnounce(data.announcements || [], groupId);
     } catch(e) {
-        document.getElementById('groupPanelBody').innerHTML = '<div class="gp-section" style="color:#e74c3c">加载公告失败: ' + escapeHtml(e.message) + '</div>';
+        document.getElementById('groupPanelBody').innerHTML = '<div class="gp-section gp-error">加载公告失败: ' + escapeHtml(e.message) + '</div>';
     }
 }
 
@@ -747,7 +754,7 @@ function renderGroupAnnounce(announcements, groupId) {
     if (groupPanelData.myRole === 'owner' || groupPanelData.myRole === 'admin') {
         html += '<div class="gp-section"><h3>发布公告</h3>' +
             '<textarea class="gp-textarea" id="gpNewAnnounce" placeholder="输入公告内容..."></textarea>' +
-            '<div class="gp-actions" style="margin-top:8px">' +
+            '<div class="gp-actions">' +
                 '<button class="gp-btn gp-btn-primary" onclick="publishAnnounce(' + groupId + ')">发布</button>' +
             '</div>' +
         '</div>';
@@ -756,13 +763,13 @@ function renderGroupAnnounce(announcements, groupId) {
     // 公告历史
     html += '<div class="gp-section"><h3>公告历史 (' + announcements.length + ')</h3>';
     if (announcements.length === 0) {
-        html += '<div style="color:#999;padding:12px">暂无公告</div>';
+        html += '<div class="empty-state compact">暂无公告</div>';
     } else {
         announcements.forEach(function(a) {
             var time = a.created_at ? new Date(a.created_at).toLocaleString('zh-CN') : '-';
-            html += '<div class="announce-item" style="padding:10px;border-bottom:1px solid #eee;margin-bottom:6px">' +
-                '<div class="announce-content" style="white-space:pre-wrap;margin-bottom:4px">' + escapeHtml(a.content) + '</div>' +
-                '<div style="font-size:11px;color:#999">' + escapeHtml(a.editor || '') + ' · ' + time + '</div>' +
+            html += '<div class="announce-item">' +
+                '<div class="announce-content">' + escapeHtml(a.content) + '</div>' +
+                '<div class="announce-meta">' + escapeHtml(a.editor || '') + ' · ' + time + '</div>' +
             '</div>';
         });
     }
@@ -788,9 +795,9 @@ function renderGroupMembers() {
     var html = '<div class="gp-section"><h3>群成员 (' + groupPanelData.members.length + ')</h3>';
 
     if (myRole === 'owner' || myRole === 'admin') {
-        html += '<div class="gp-row" style="margin-bottom:10px">' +
-            '<input type="number" id="gpAddMemberInput" placeholder="输入用户 ID" class="gp-input" style="width:120px;margin:0">' +
-            '<button class="gp-btn gp-btn-primary" onclick="addMemberAction(' + groupPanelData.group.id + ')" style="margin-left:6px">添加成员</button>' +
+        html += '<div class="gp-row gp-add-member">' +
+            '<input type="number" id="gpAddMemberInput" placeholder="输入用户 ID" class="gp-input">' +
+            '<button class="gp-btn gp-btn-primary" onclick="addMemberAction(' + groupPanelData.group.id + ')">添加成员</button>' +
         '</div>';
     }
 
@@ -806,7 +813,7 @@ function renderGroupMembers() {
         html += '<div class="gp-member-item" data-user-id="' + m.user_id + '">' +
             '<div class="member-info">' +
                 '<span>' + escapeHtml(displayName.charAt(0)) + '</span>' +
-                '<a href="/profile?user_id=' + m.user_id + '" style="margin-left:6px;color:var(--link-color)" title="查看资料">' + escapeHtml(displayName) + '</a>' +
+                '<a href="/profile?user_id=' + m.user_id + '" class="text-link" title="查看资料">' + escapeHtml(displayName) + '</a>' +
                 '<span class="role-tag ' + roleCls + '">' + roleLabel + '</span>' +
                 (isMuted ? '<span class="muted-tag">禁言中</span>' : '') +
                 dndIcon +
@@ -817,8 +824,8 @@ function renderGroupMembers() {
                 if (isMuted) html += '<button class="gp-btn gp-btn-warn" onclick="unmuteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">解禁</button>';
                 else html += '<button class="gp-btn gp-btn-warn" onclick="muteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">禁言</button>';
                 html += '<button class="gp-btn gp-btn-danger" onclick="kickMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">踢出</button>';
-                if (m.role === 'admin') html += '<button class="gp-btn" style="background:#888;color:#fff" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">取消管理</button>';
-                else html += '<button class="gp-btn" style="background:#2b5f8a;color:#fff" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">设管理</button>';
+                if (m.role === 'admin') html += '<button class="gp-btn gp-btn-muted" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">取消管理</button>';
+                else html += '<button class="gp-btn gp-btn-secondary" onclick="setAdminAction(' + groupPanelData.group.id + ',' + m.user_id + ')">设管理</button>';
                 html += '<button class="gp-btn gp-btn-primary" onclick="transferOwnerAction(' + groupPanelData.group.id + ',' + m.user_id + ')">转让</button>';
             } else if (myRole === 'admin' && m.role === 'member') {
                 if (isMuted) html += '<button class="gp-btn gp-btn-warn" onclick="unmuteMemberAction(' + groupPanelData.group.id + ',' + m.user_id + ')">解禁</button>';
@@ -1003,7 +1010,7 @@ function formatMsgTime(createdAt) {
     var timeStr = formatMsgTime(msg.created_at);
     var html = '<div class="msg ' + cls + '" data-msg-id="' + msg.id + '">' +
         '<div class="bubble">' +
-            '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" style="color:var(--link-color)">' + escapeHtml(name) + '</a>' +
+            '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" class="text-link">' + escapeHtml(name) + '</a>' +
             (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + '</div>' +
             body +
         '</div>' +

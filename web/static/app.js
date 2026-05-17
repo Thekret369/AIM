@@ -270,7 +270,7 @@ function playMessageSound() {
     var path = window.location.pathname || '/';
     document.querySelectorAll('.nav a[href]').forEach(function(link) {
         var href = link.getAttribute('href');
-        if (!href || href === '/profile') return;
+        if (!href) return;
         if (path === href) link.classList.add('nav-active');
     });
 })();

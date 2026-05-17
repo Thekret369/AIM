@@ -18,14 +18,20 @@
         <a href="/settings">设置</a>
     </div>
 </div>
-<div class="container">
+<div class="container page-shell groups-page">
+    <div class="page-header">
+        <div>
+            <h1>群组</h1>
+            <p>群聊与成员管理</p>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" onclick="showCreateGroup()">创建群组</button>
+            <button class="btn" onclick="showJoinGroup()">加入群组</button>
+        </div>
+    </div>
     <div class="section">
         <h2>我的群组</h2>
         <div id="groupList" class="contact-list">加载中...</div>
-    </div>
-    <div class="section">
-        <button class="btn btn-primary" onclick="showCreateGroup()">创建群组</button>
-        <button class="btn btn-primary" onclick="showJoinGroup()" style="margin-left:8px">加入群组</button>
     </div>
 </div>
 
@@ -56,9 +62,9 @@
     <div class="modal-content">
         <h3>群成员管理</h3>
         <div id="memberList"></div>
-        <div style="margin-top:12px">
-            <input type="number" id="muteMinutes" placeholder="禁言分钟数" style="width:140px">
-            <input type="number" id="newOwnerId" placeholder="新群主用户 ID" style="width:140px">
+        <div class="member-toolbar">
+            <input type="number" id="muteMinutes" placeholder="禁言分钟数">
+            <input type="number" id="newOwnerId" placeholder="新群主用户 ID">
         </div>
         <button class="btn" onclick="closeModal('memberModal')">关闭</button>
     </div>
@@ -78,7 +84,7 @@ async function loadGroups() {
         const data = await api('GET', '/groups');
         const list = document.getElementById('groupList');
         if (!data.groups || data.groups.length === 0) {
-            list.innerHTML = '<div style="padding:12px;color:#888">暂未加入群组</div>';
+            list.innerHTML = '<div class="empty-state">暂未加入群组</div>';
             return;
         }
         list.innerHTML = data.groups.map(g => `
@@ -128,9 +134,9 @@ async function viewMembers(groupId) {
         const data = await api('GET', '/groups/' + groupId + '/members');
         const list = document.getElementById('memberList');
         list.innerHTML = data.members.map(m => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #eee">
+            <div class="member-row">
                 <span>用户 ID: ${m.user_id} | 角色: ${m.role} ${m.muted_until ? '🔇禁言中' : ''}</span>
-                <span>
+                <span class="member-actions">
                     <button class="btn btn-sm" onclick="muteMember(${m.user_id})">禁言</button>
                     <button class="btn btn-danger btn-sm" onclick="kickMember(${m.user_id})">踢出</button>
                     <button class="btn btn-sm" onclick="transferOwner(${m.user_id})">转让</button>

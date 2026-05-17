@@ -18,14 +18,20 @@
         <a href="/settings">设置</a>
     </div>
 </div>
-<div class="container">
+<div class="container page-shell profile-page">
+    <div class="page-header">
+        <div>
+            <h1>个人资料</h1>
+            <p>账号信息</p>
+        </div>
+    </div>
     <div class="section">
         <h2 id="profileTitle">个人资料</h2>
         <div id="profileInfo">加载中...</div>
     </div>
     <!-- 仅本人可见的编辑区域 -->
     <div id="editSection" style="display:none">
-        <div class="section">
+        <div class="section profile-edit-card">
             <h2>修改资料</h2>
             <div class="form-group">
                 <label>昵称</label>
@@ -42,7 +48,7 @@
             <button class="btn btn-primary" onclick="saveProfile()">保存修改</button>
             <span class="msg" id="profileMsg"></span>
         </div>
-        <div class="section">
+        <div class="section profile-edit-card">
             <h2>修改密码</h2>
             <div class="form-group">
                 <label>旧密码</label>
