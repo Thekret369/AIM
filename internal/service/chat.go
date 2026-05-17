@@ -8,6 +8,7 @@ import (
 	"AIM/internal/ws"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ChatService struct {
@@ -44,10 +45,20 @@ func (s *ChatService) validateClientMessage(msg *model.Message) error {
 }
 
 func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
-	if p == nil || len(p.MessageIDs) == 0 {
+	if p == nil {
 		return
 	}
+	if p.GroupID > 0 && p.LastReadMsgID > 0 {
+		s.markGroupReadWatermark(p)
+		return
+	}
+	if len(p.MessageIDs) == 0 {
+		return
+	}
+	s.markReadByMessageIDs(p)
+}
 
+func (s *ChatService) markReadByMessageIDs(p *ws.ReadReceiptPayload) {
 	var msgs []model.Message
 	if err := model.DB.Where("id IN ?", p.MessageIDs).
 		Order("id ASC").
@@ -112,34 +123,19 @@ func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
 		groupPtr = &groupID
 	}
 
-	existing := model.MessageRead{}
-	q := model.DB.Where("user_id = ?", p.FromUserID)
-	if peerPtr == nil {
-		q = q.Where("peer_user_id IS NULL")
-	} else {
-		q = q.Where("peer_user_id = ?", *peerPtr)
+	convType := model.ConversationUser
+	convID := peerUserID
+	if hasGroup {
+		convType = model.ConversationGroup
+		convID = groupID
 	}
-	if groupPtr == nil {
-		q = q.Where("group_id IS NULL")
-	} else {
-		q = q.Where("group_id = ?", *groupPtr)
-	}
-	err := q.First(&existing).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		model.DB.Create(&model.MessageRead{
-			UserID:        p.FromUserID,
-			PeerUserID:    peerPtr,
-			GroupID:       groupPtr,
-			LastReadMsgID: lastMsgID,
-		})
-	} else if err != nil {
+	if err := s.saveReadProgress(p.FromUserID, convType, convID, peerPtr, groupPtr, lastMsgID); err != nil {
 		return
-	} else if lastMsgID > existing.LastReadMsgID {
-		model.DB.Model(&existing).Update("last_read_msg_id", lastMsgID)
 	}
 
 	forward := *p
 	forward.MessageIDs = validIDs
+	forward.LastReadMsgID = lastMsgID
 	if peerPtr != nil {
 		forward.PeerUserID = *peerPtr
 		forward.GroupID = 0
@@ -153,6 +149,63 @@ func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
 			Pluck("user_id", &memberIDs)
 		s.Hub.SendReadReceiptToUsers(memberIDs, &forward)
 	}
+}
+
+func (s *ChatService) markGroupReadWatermark(p *ws.ReadReceiptPayload) {
+	if _, err := s.getGroupMember(p.GroupID, p.FromUserID); err != nil {
+		return
+	}
+
+	var msg model.Message
+	err := model.DB.Where("id = ? AND group_id = ? AND from_user_id <> ?", p.LastReadMsgID, p.GroupID, p.FromUserID).
+		First(&msg).Error
+	if err != nil {
+		return
+	}
+
+	groupPtr := p.GroupID
+	if err := s.saveReadProgress(p.FromUserID, model.ConversationGroup, p.GroupID, nil, &groupPtr, msg.ID); err != nil {
+		return
+	}
+
+	forward := *p
+	forward.PeerUserID = 0
+	forward.GroupID = p.GroupID
+	forward.MessageIDs = nil
+	forward.LastReadMsgID = msg.ID
+
+	var memberIDs []uint
+	model.DB.Model(&model.GroupMember{}).
+		Where("group_id = ?", p.GroupID).
+		Pluck("user_id", &memberIDs)
+	s.Hub.SendReadReceiptToUsers(memberIDs, &forward)
+}
+
+func (s *ChatService) saveReadProgress(userID uint, convType string, convID uint, peerPtr, groupPtr *uint, lastMsgID uint) error {
+	if userID == 0 || convType == "" || convID == 0 || lastMsgID == 0 {
+		return errors.New("无效的已读进度")
+	}
+
+	read := model.MessageRead{
+		UserID:           userID,
+		ConversationType: convType,
+		ConversationID:   convID,
+		PeerUserID:       peerPtr,
+		GroupID:          groupPtr,
+		LastReadMsgID:    lastMsgID,
+	}
+	return model.DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "user_id"},
+			{Name: "conversation_type"},
+			{Name: "conversation_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"last_read_msg_id": gorm.Expr("CASE WHEN last_read_msg_id < ? THEN ? ELSE last_read_msg_id END", lastMsgID, lastMsgID),
+			"peer_user_id":     peerPtr,
+			"group_id":         groupPtr,
+		}),
+	}).Create(&read).Error
 }
 
 func (s *ChatService) HandleTyping(p *ws.TypingPayload) {
@@ -171,6 +224,14 @@ func (s *ChatService) HandleTyping(p *ws.TypingPayload) {
 }
 
 func (s *ChatService) Send(msg *model.Message) error {
+	if msg.IsToGroup() && msg.RecipientCount == 0 {
+		var count int64
+		model.DB.Model(&model.GroupMember{}).
+			Where("group_id = ? AND user_id <> ?", *msg.GroupID, msg.FromUserID).
+			Count(&count)
+		msg.RecipientCount = int(count)
+	}
+
 	if err := model.DB.Create(msg).Error; err != nil {
 		return err
 	}
@@ -225,20 +286,20 @@ func (s *ChatService) GetHistory(userID, peerID uint, page, pageSize int, afterI
 }
 
 func (s *ChatService) GetGroupHistory(userID, groupID uint, page, pageSize int, afterID uint) ([]model.Message, int64, error) {
-	var count int64
-	model.DB.Model(&model.GroupMember{}).
-		Where("group_id = ? AND user_id = ?", groupID, userID).
-		Count(&count)
-	if count == 0 {
-		return nil, 0, errors.New("不属于该群组")
+	member, err := s.getGroupMember(groupID, userID)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	var msgs []model.Message
 	var total int64
 
-	model.DB.Model(&model.Message{}).Where("group_id = ?", groupID).Count(&total)
+	baseWhere := "group_id = ? AND created_at >= ?"
+	baseArgs := []interface{}{groupID, member.CreatedAt}
 
-	db := model.DB.Where("group_id = ?", groupID)
+	model.DB.Model(&model.Message{}).Where(baseWhere, baseArgs...).Count(&total)
+
+	db := model.DB.Where(baseWhere, baseArgs...)
 	if afterID > 0 {
 		err := db.Where("id > ?", afterID).
 			Preload("FromUser").Order("id ASC").Find(&msgs).Error
@@ -334,29 +395,34 @@ func (s *ChatService) GetReadInfo(userID, peerID uint, groupID *uint) ReadInfo {
 	var info ReadInfo
 	if groupID != nil {
 		var r model.MessageRead
-		model.DB.Where("user_id = ? AND group_id = ? AND peer_user_id IS NULL", userID, *groupID).First(&r)
+		model.DB.Where("user_id = ? AND conversation_type = ? AND conversation_id = ?", userID, model.ConversationGroup, *groupID).First(&r)
 		info.MyLastRead = r.LastReadMsgID
 	} else {
 		var myRead model.MessageRead
-		model.DB.Where("user_id = ? AND peer_user_id = ? AND group_id IS NULL", userID, peerID).First(&myRead)
+		model.DB.Where("user_id = ? AND conversation_type = ? AND conversation_id = ?", userID, model.ConversationUser, peerID).First(&myRead)
 		info.MyLastRead = myRead.LastReadMsgID
 		var peerRead model.MessageRead
-		model.DB.Where("user_id = ? AND peer_user_id = ? AND group_id IS NULL", peerID, userID).First(&peerRead)
+		model.DB.Where("user_id = ? AND conversation_type = ? AND conversation_id = ?", peerID, model.ConversationUser, userID).First(&peerRead)
 		info.PeerLastRead = peerRead.LastReadMsgID
 	}
 	return info
 }
 
-func (s *ChatService) GetGroupReads(groupID uint) (map[uint]uint, error) {
+func (s *ChatService) GetGroupReads(userID, groupID uint) (map[uint]uint, error) {
+	if _, err := s.getGroupMember(groupID, userID); err != nil {
+		return nil, err
+	}
+
 	type row struct {
 		UserID uint
 		MaxID  uint
 	}
 	var rows []row
 	if err := model.DB.Model(&model.MessageRead{}).
-		Select("user_id, MAX(last_read_msg_id) AS max_id").
-		Where("group_id = ? AND peer_user_id IS NULL", groupID).
-		Group("user_id").
+		Select("message_reads.user_id, MAX(message_reads.last_read_msg_id) AS max_id").
+		Joins("JOIN group_members ON group_members.user_id = message_reads.user_id AND group_members.group_id = ?", groupID).
+		Where("message_reads.conversation_type = ? AND message_reads.conversation_id = ?", model.ConversationGroup, groupID).
+		Group("message_reads.user_id").
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -365,6 +431,15 @@ func (s *ChatService) GetGroupReads(groupID uint) (map[uint]uint, error) {
 		result[r.UserID] = r.MaxID
 	}
 	return result, nil
+}
+
+func (s *ChatService) getGroupMember(groupID, userID uint) (*model.GroupMember, error) {
+	var member model.GroupMember
+	if err := model.DB.Where("group_id = ? AND user_id = ?", groupID, userID).
+		First(&member).Error; err != nil {
+		return nil, errors.New("不属于该群组")
+	}
+	return &member, nil
 }
 
 func (s *ChatService) GetBroadcastHistory(page, pageSize int) ([]model.Message, int64, error) {
