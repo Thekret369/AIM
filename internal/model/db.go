@@ -30,6 +30,7 @@ func InitDB(dsn string) error {
 		&GroupMember{},
 		&Announcement{},
 		&MessageRead{},
+		&AIBot{},
 	)
 	if err != nil {
 		return err
@@ -61,6 +62,8 @@ func EnsureIndexes() error {
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_message_reads_user_conversation ON message_reads (user_id, conversation_type, conversation_id)",
 		"CREATE INDEX IF NOT EXISTS idx_group_members_group_user ON group_members (group_id, user_id)",
 		"CREATE INDEX IF NOT EXISTS idx_friend_relations_user_friend ON friend_relations (user_id, friend_id)",
+		"CREATE INDEX IF NOT EXISTS idx_ai_bots_owner_status ON ai_bots (owner_id, status)",
+		"CREATE INDEX IF NOT EXISTS idx_ai_bots_system_status ON ai_bots (is_system, status)",
 	}
 	for _, stmt := range statements {
 		if err := DB.Exec(stmt).Error; err != nil {
