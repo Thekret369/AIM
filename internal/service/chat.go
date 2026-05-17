@@ -12,14 +12,24 @@ import (
 )
 
 type ChatService struct {
-	Hub *ws.Hub
+	Hub         *ws.Hub
+	AIResponder AIResponder
+}
+
+// AIResponder 由 AI 服务实现，聊天服务只负责在消息入库后通知它。
+type AIResponder interface {
+	HandleMessage(msg *model.Message)
 }
 
 func (s *ChatService) SendFromClient(msg *model.Message) error {
 	if err := s.validateClientMessage(msg); err != nil {
 		return err
 	}
-	return s.Send(msg)
+	if err := s.Send(msg); err != nil {
+		return err
+	}
+	s.dispatchAI(msg)
+	return nil
 }
 
 func (s *ChatService) validateClientMessage(msg *model.Message) error {
@@ -42,6 +52,13 @@ func (s *ChatService) validateClientMessage(msg *model.Message) error {
 		}
 	}
 	return nil
+}
+
+func (s *ChatService) dispatchAI(msg *model.Message) {
+	if s == nil || s.AIResponder == nil || msg == nil {
+		return
+	}
+	go s.AIResponder.HandleMessage(msg)
 }
 
 func (s *ChatService) MarkRead(p *ws.ReadReceiptPayload) {
