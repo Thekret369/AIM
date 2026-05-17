@@ -637,6 +637,140 @@ body {
 	color: var(--text-secondary);
 }
 
+/* ========================================
+   AI 助手管理
+   ======================================== */
+
+.hidden { display: none !important; }
+
+.ai-layout { max-width: 900px; }
+
+.ai-page-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 14px;
+}
+
+.ai-page-head h2 {
+	font-size: 18px;
+	color: var(--text);
+}
+
+.ai-notice {
+	padding: 10px 12px;
+	margin-bottom: 12px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--surface);
+	color: #e74c3c;
+}
+
+.ai-bot-list { padding: 8px 16px; }
+
+.ai-bot-item {
+	cursor: default;
+	align-items: flex-start;
+	gap: 8px;
+}
+
+.ai-bot-item .avatar {
+	border-radius: 8px;
+	font-size: 13px;
+}
+
+.ai-bot-actions {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+
+.ai-bot-actions .btn:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+.ai-pill-row {
+	display: flex;
+	gap: 6px;
+	margin-top: 6px;
+	flex-wrap: wrap;
+}
+
+.ai-pill {
+	display: inline-flex;
+	align-items: center;
+	height: 20px;
+	padding: 0 8px;
+	border-radius: 10px;
+	background: var(--surface-hover);
+	color: var(--text-secondary);
+	font-size: 12px;
+}
+
+.ai-pill.enabled {
+	background: #e8f6ef;
+	color: #1e8449;
+}
+
+.ai-pill.disabled {
+	background: #f8e8e6;
+	color: #c0392b;
+}
+
+.ai-modal-content {
+	width: min(720px, calc(100vw - 32px));
+	max-height: calc(100vh - 80px);
+	overflow-y: auto;
+}
+
+.ai-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+}
+
+.form-group textarea,
+.form-group select {
+	width: 100%;
+	max-width: 400px;
+	padding: 8px 12px;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	font-size: 14px;
+	background: var(--input-bg);
+	color: var(--text);
+}
+
+.ai-modal-content .form-group input,
+.ai-modal-content .form-group textarea,
+.ai-modal-content .form-group select {
+	max-width: none;
+}
+
+.ai-modal-actions {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+	margin-top: 12px;
+}
+
+@media (max-width: 720px) {
+	.ai-page-head {
+		align-items: stretch;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.ai-form-grid { grid-template-columns: 1fr; }
+	.ai-bot-item { flex-wrap: wrap; }
+	.ai-bot-actions {
+		width: 100%;
+		justify-content: flex-start;
+	}
+}
+
 /* @ 提及下拉 */
 .mention-dropdown {
 	position: fixed;
