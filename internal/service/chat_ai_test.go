@@ -187,6 +187,127 @@ func TestEnsureDefaultBotCreatesAIUser(t *testing.T) {
 	if !bot.IsAI || bot.Username != "default_ai" || bot.AIModel != "test-model" || bot.AIEndpoint != "http://ai.local/v1" {
 		t.Fatalf("unexpected bot: %+v", bot)
 	}
+
+	var cfg model.AIBot
+	if err := model.DB.Where("user_id = ? AND is_system = ?", bot.ID, true).First(&cfg).Error; err != nil {
+		t.Fatalf("expected system ai bot config: %v", err)
+	}
+	if cfg.OwnerID != nil || cfg.Model != "test-model" {
+		t.Fatalf("unexpected system config: %+v", cfg)
+	}
+}
+
+func TestUserAIBotCRUDDoesNotExposeAPIKey(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_crud_owner")
+	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{})
+
+	created, err := aiSvc.CreateUserBot(owner.ID, AIBotInput{
+		Name:         "My AI",
+		BaseURL:      "http://user-ai.local/v1",
+		APIKey:       "secret-key",
+		Model:        "user-model",
+		SystemPrompt: "answer as helper",
+	})
+	if err != nil {
+		t.Fatalf("create user bot: %v", err)
+	}
+	if !created.CanEdit || !created.APIKeySet || created.IsSystem {
+		t.Fatalf("unexpected created info: %+v", created)
+	}
+
+	bots, err := aiSvc.ListUserBots(owner.ID)
+	if err != nil {
+		t.Fatalf("list user bots: %v", err)
+	}
+	if len(bots) != 1 || bots[0].UserID != created.UserID || !bots[0].APIKeySet {
+		t.Fatalf("unexpected bot list: %+v", bots)
+	}
+
+	newName := "Renamed AI"
+	newKey := "new-secret"
+	updated, err := aiSvc.UpdateUserBot(owner.ID, created.ID, AIBotUpdateInput{
+		Name:   &newName,
+		APIKey: &newKey,
+	})
+	if err != nil {
+		t.Fatalf("update user bot: %v", err)
+	}
+	if updated.Nickname != newName || !updated.APIKeySet {
+		t.Fatalf("unexpected updated info: %+v", updated)
+	}
+
+	if err := aiSvc.DeleteUserBot(owner.ID, created.ID); err != nil {
+		t.Fatalf("delete user bot: %v", err)
+	}
+	bots, err = aiSvc.ListUserBots(owner.ID)
+	if err != nil {
+		t.Fatalf("list after delete: %v", err)
+	}
+	if len(bots) != 0 {
+		t.Fatalf("deleted bot should be hidden, got %+v", bots)
+	}
+}
+
+func TestUserAIBotUsesOwnerAPIKey(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_owner_key")
+	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{Timeout: time.Second})
+	bot, err := aiSvc.CreateUserBot(owner.ID, AIBotInput{
+		Name:    "Owner AI",
+		BaseURL: "http://owner-ai.local/v1",
+		APIKey:  "owner-key",
+		Model:   "owner-model",
+	})
+	if err != nil {
+		t.Fatalf("create owner bot: %v", err)
+	}
+
+	fake := &fakeAIClient{reply: "owner reply", calls: make(chan ai.ChatRequest, 1)}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{Timeout: time.Second})
+	toBot := bot.UserID
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: owner.ID,
+		ToUserID:   &toBot,
+		Content:    "hello own ai",
+	}); err != nil {
+		t.Fatalf("send owner ai message: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	if req.APIKey != "owner-key" || req.Model != "owner-model" || req.BaseURL != "http://owner-ai.local/v1" {
+		t.Fatalf("unexpected owner ai request: %+v", req)
+	}
+}
+
+func TestOtherUserCannotDirectTriggerOwnedAIBot(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_owner_private")
+	other := createSecurityUser(t, "ai_other_private")
+	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{Timeout: time.Second})
+	bot, err := aiSvc.CreateUserBot(owner.ID, AIBotInput{
+		Name:    "Private AI",
+		BaseURL: "http://private-ai.local/v1",
+		APIKey:  "private-key",
+		Model:   "private-model",
+	})
+	if err != nil {
+		t.Fatalf("create private bot: %v", err)
+	}
+
+	fake := &fakeAIClient{reply: "should not call", calls: make(chan ai.ChatRequest, 1)}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{Timeout: time.Second})
+	toBot := bot.UserID
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: other.ID,
+		ToUserID:   &toBot,
+		Content:    "use other api",
+	}); err != nil {
+		t.Fatalf("send other ai message: %v", err)
+	}
+	assertNoAIRequest(t, fake.calls)
 }
 
 func createAIUser(t *testing.T, username string) *model.User {
