@@ -18,6 +18,7 @@ type Hub struct {
 	OnMessage     chan *model.Message
 	OnTyping      chan *TypingPayload
 	OnReadReceipt chan *ReadReceiptPayload
+	OnUserOnline  chan uint
 }
 
 func NewHub() *Hub {
@@ -28,6 +29,7 @@ func NewHub() *Hub {
 		OnMessage:     make(chan *model.Message, 256),
 		OnTyping:      make(chan *TypingPayload, 64),
 		OnReadReceipt: make(chan *ReadReceiptPayload, 64),
+		OnUserOnline:  make(chan uint, 64),
 	}
 	go h.run()
 	return h
@@ -46,6 +48,7 @@ func (h *Hub) run() {
 			h.mu.Unlock()
 			if wasOffline {
 				h.broadcastStatus(client.UserID, true)
+				h.notifyUserOnline(client.UserID)
 			}
 
 		case client := <-h.unregister:
@@ -61,6 +64,13 @@ func (h *Hub) run() {
 			}
 			h.mu.Unlock()
 		}
+	}
+}
+
+func (h *Hub) notifyUserOnline(userID uint) {
+	select {
+	case h.OnUserOnline <- userID:
+	default:
 	}
 }
 
