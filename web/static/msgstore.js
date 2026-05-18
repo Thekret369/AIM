@@ -38,6 +38,24 @@ var msgStore = (function() {
         return convKey + '_' + msgId;
     }
 
+    function buildMessageRecord(convKey, msg) {
+        return {
+            conv_msg_id: makeKey(convKey, msg.id),
+            conv_key: convKey,
+            msg_id: msg.id,
+            data: msg,
+            created_at: msg.created_at || ''
+        };
+    }
+
+    function mergeMessageRecord(existing, incoming) {
+        if (!existing || !existing.data) return incoming;
+        if (existing.data._read && !incoming.data._read) {
+            incoming.data._read = true;
+        }
+        return incoming;
+    }
+
     // ========================================
     // 消息存取
     // ========================================
@@ -48,14 +66,13 @@ var msgStore = (function() {
             return new Promise(function(resolve, reject) {
                 var tx = db.transaction('messages', 'readwrite');
                 var store = tx.objectStore('messages');
-                var record = {
-                    conv_msg_id: makeKey(convKey, msg.id),
-                    conv_key: convKey,
-                    msg_id: msg.id,
-                    data: msg,
-                    created_at: msg.created_at || ''
+                var key = makeKey(convKey, msg.id);
+                var req = store.get(key);
+                req.onsuccess = function(e) {
+                    var record = mergeMessageRecord(e.target.result, buildMessageRecord(convKey, msg));
+                    store.put(record);
                 };
-                store.put(record);
+                req.onerror = function(e) { reject(e.target.error); };
                 tx.oncomplete = function() { resolve(); };
                 tx.onerror = function(e) { reject(e.target.error); };
             });
@@ -69,15 +86,13 @@ var msgStore = (function() {
             return new Promise(function(resolve, reject) {
                 var tx = db.transaction('messages', 'readwrite');
                 var store = tx.objectStore('messages');
-                for (var i = 0; i < msgs.length; i++) {
-                    var msg = msgs[i];
-                    store.put({
-                        conv_msg_id: makeKey(convKey, msg.id),
-                        conv_key: convKey,
-                        msg_id: msg.id,
-                        data: msg,
-                        created_at: msg.created_at || ''
-                    });
+                for (let i = 0; i < msgs.length; i++) {
+                    let msg = msgs[i];
+                    let req = store.get(makeKey(convKey, msg.id));
+                    req.onsuccess = function(e) {
+                        var record = mergeMessageRecord(e.target.result, buildMessageRecord(convKey, msg));
+                        store.put(record);
+                    };
                 }
                 tx.oncomplete = function() { resolve(); };
                 tx.onerror = function(e) { reject(e.target.error); };
@@ -157,7 +172,15 @@ var msgStore = (function() {
             return new Promise(function(resolve, reject) {
                 var tx = db.transaction('meta', 'readwrite');
                 var store = tx.objectStore('meta');
-                store.put({ conv_key: convKey, last_msg_id: msgId, last_sync_at: Date.now() });
+                var req = store.get(convKey);
+                req.onsuccess = function(e) {
+                    var meta = e.target.result || { conv_key: convKey };
+                    var oldID = meta.last_msg_id || 0;
+                    meta.last_msg_id = msgId > oldID ? msgId : oldID;
+                    meta.last_sync_at = Date.now();
+                    store.put(meta);
+                };
+                req.onerror = function(e) { reject(e.target.error); };
                 tx.oncomplete = function() { resolve(); };
                 tx.onerror = function(e) { reject(e.target.error); };
             });

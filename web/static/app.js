@@ -80,6 +80,7 @@ let onMessage = null;       // 回调: function(msg)  — chat 消息（已解�
 let onTyping = null;        // 回调: function(payload)
 let onReadReceipt = null;   // 回调: function(payload)
 let onStatus = null;        // 回调: function(payload)
+let onWSOpen = null;        // 回调: WebSocket 连接或重连成功
 let onlineUsers = new Set(); // 在线用户 ID 集合
 
 function connectWS() {
@@ -93,6 +94,7 @@ function connectWS() {
 
     ws.onopen = function() {
         console.log('[ws] 已连接');
+        if (onWSOpen) onWSOpen();
     };
 
     ws.onmessage = function(evt) {

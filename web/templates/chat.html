@@ -100,6 +100,9 @@ let chatTabs = new Map();
 let activeTabKey = null;
 let unreadCounts = new Map();
 let lastMessages = new Map();
+let chatInitialized = false;
+let pendingOnlineSync = false;
+let onlineSyncRunning = false;
 
 // 群相关缓存
 let groupMembersMap = new Map();   // groupId → members[]
@@ -946,8 +949,13 @@ onMessage = function(msg) {
 
     if (chatTabs.has(key)) {
         var tab = chatTabs.get(key);
-        tab.messages.push(msg);
-        if (key === activeTabKey) {
+        var added = upsertMessage(tab.messages, msg);
+        if (!added) {
+            if (key === activeTabKey) {
+                renderAllMessages(tab);
+                tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
+            }
+        } else if (key === activeTabKey) {
             tab.messagesEl.innerHTML += renderOneMessage(msg);
             tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
         } else if (msg.from_user_id !== myId) { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); updateTabBadge(key); }
@@ -1037,6 +1045,58 @@ function renderAllMessages(tab) {
     var html = '';
     for (var i = 0; i < tab.messages.length; i++) html += renderOneMessage(tab.messages[i]);
     tab.messagesEl.innerHTML = html;
+}
+
+function mergeMessageState(existing, incoming) {
+    if (!existing) return incoming;
+    if (existing._read && !incoming._read) incoming._read = true;
+    for (var k in incoming) {
+        if (Object.prototype.hasOwnProperty.call(incoming, k)) existing[k] = incoming[k];
+    }
+    return existing;
+}
+
+function upsertMessage(list, msg) {
+    for (var i = 0; i < list.length; i++) {
+        if (list[i].id === msg.id) {
+            mergeMessageState(list[i], msg);
+            return false;
+        }
+    }
+    list.push(msg);
+    list.sort(function(a, b) { return a.id - b.id; });
+    return true;
+}
+
+function mergeMessageLists(existing, incoming) {
+    for (var i = 0; i < incoming.length; i++) {
+        upsertMessage(existing, incoming[i]);
+    }
+    return existing;
+}
+
+function applyReadInfoToMessages(messages, info) {
+    if (!messages || !info) return [];
+    var readIds = [];
+    var myId = getUserId();
+    for (var i = 0; i < messages.length; i++) {
+        var m = messages[i];
+        var shouldMark = false;
+        if (m.from_user_id === myId && info.peer_last_read && m.id <= info.peer_last_read) {
+            shouldMark = true;
+        } else if (m.from_user_id !== myId && info.my_last_read && m.id <= info.my_last_read) {
+            shouldMark = true;
+        }
+        if (shouldMark && !m._read) {
+            m._read = true;
+            readIds.push(m.id);
+        }
+    }
+    return readIds;
+}
+
+function persistReadMarks(key, readIds) {
+    if (readIds.length > 0 && typeof msgStore !== 'undefined') msgStore.markRead(key, readIds);
 }
 
 // ========================================
@@ -1264,22 +1324,22 @@ async function loadHistory(key, page) {
     try {
         var data = await api('GET', url);
         tab._loading = false;
-        if (!data.messages || data.messages.length === 0) { tab.hasMore = false; return; }
+        if (!data.messages || data.messages.length === 0) {
+            if (data.read_info) {
+                persistReadMarks(key, applyReadInfoToMessages(tab.messages, data.read_info));
+                if (key === activeTabKey && typeof refreshReadMarks === 'function') refreshReadMarks(tab);
+            }
+            if (tab.type === 'group' && typeof loadGroupReads === 'function' && tab.targetId) loadGroupReads(tab.targetId, tab);
+            if (!afterID) tab.hasMore = false;
+            return;
+        }
 
         // after_id 增量时服务端返回升序，全量时为降序需反转
         var newMsgs = afterID ? data.messages : data.messages.reverse();
 
         // 根据服务端 read_info 恢复已读标记
         if (data.read_info) {
-            var info = data.read_info;
-            var myId = getUserId();
-            (afterID ? tab.messages.concat(newMsgs) : newMsgs).forEach(function(m) {
-                if (m.from_user_id === myId && info.peer_last_read && m.id <= info.peer_last_read) {
-                    m._read = true;
-                } else if (m.from_user_id !== myId && info.my_last_read && m.id <= info.my_last_read) {
-                    m._read = true;
-                }
-            });
+            persistReadMarks(key, applyReadInfoToMessages(afterID ? tab.messages.concat(newMsgs) : newMsgs, data.read_info));
         }
 
         // 合并消息（按 ID 去重）
@@ -1289,7 +1349,7 @@ async function loadHistory(key, page) {
         if (page === 1 && afterID) {
             tab.messages = tab.messages.concat(toAdd);               // 增量追加
         } else if (page === 1) {
-            tab.messages = toAdd;                                    // 首次全量
+            tab.messages = mergeMessageLists(tab.messages, newMsgs); // 首次全量
         } else {
             tab.messages = toAdd.concat(tab.messages);               // 翻页前置
         }
@@ -1446,6 +1506,41 @@ async function loadOnlineStatus() {
     } catch(e) {}
 }
 
+async function syncAfterOnline() {
+    if (!chatInitialized) {
+        pendingOnlineSync = true;
+        return;
+    }
+    if (onlineSyncRunning) {
+        pendingOnlineSync = true;
+        return;
+    }
+
+    onlineSyncRunning = true;
+    pendingOnlineSync = false;
+    try {
+        await loadLastMessages();
+        sortConversations();
+        renderSidebar();
+        updateOnlineDots();
+
+        var keys = Array.from(chatTabs.keys());
+        for (var i = 0; i < keys.length; i++) {
+            var tab = chatTabs.get(keys[i]);
+            if (!tab) continue;
+            tab.hasMore = true;
+            await loadHistory(keys[i], 1);
+        }
+    } finally {
+        onlineSyncRunning = false;
+        if (pendingOnlineSync) syncAfterOnline();
+    }
+}
+
+onWSOpen = function() {
+    syncAfterOnline();
+};
+
 // ========================================
 // 初始化
 // ========================================
@@ -1462,6 +1557,8 @@ async function init() {
         var name = conv ? conv.name : ('用户' + pendingOpenTarget);
         openOrSwitchTab(pendingOpenKey, pendingOpenType, pendingOpenTarget, name);
     }
+    chatInitialized = true;
+    if (pendingOnlineSync) syncAfterOnline();
 }
 
 loadAndApplySettings();
