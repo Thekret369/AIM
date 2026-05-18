@@ -84,6 +84,11 @@ func main() {
 			}
 		}
 	}()
+	go func() {
+		for userID := range hub.OnUserOnline {
+			chatSvc.SyncOfflineMessages(userID)
+		}
+	}()
 	// 输入状态消费协程
 	go func() {
 		for p := range hub.OnTyping {
