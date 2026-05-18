@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"AIM/internal/model"
 	"AIM/internal/ws"
@@ -18,6 +19,16 @@ type ChatService struct {
 }
 
 const offlineSyncBatchSize = 100
+
+type MessageSearchParams struct {
+	Scope     string
+	TargetID  uint
+	Keyword   string
+	StartTime *time.Time
+	EndTime   *time.Time
+	Page      int
+	PageSize  int
+}
 
 // AIResponder 由 AI 服务实现，聊天服务只负责在消息入库后通知它。
 type AIResponder interface {
@@ -53,6 +64,42 @@ func (s *ChatService) validateClientMessage(msg *model.Message) error {
 		if member.IsMuted() {
 			return errors.New("已被禁言")
 		}
+	}
+	if err := s.validateQuoteMessage(msg); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ChatService) validateQuoteMessage(msg *model.Message) error {
+	if msg == nil || msg.QuoteMessageID == nil {
+		return nil
+	}
+	if *msg.QuoteMessageID == 0 {
+		return errors.New("引用消息无效")
+	}
+
+	var quote model.Message
+	if err := model.DB.First(&quote, *msg.QuoteMessageID).Error; err != nil {
+		return errors.New("引用消息不存在")
+	}
+
+	switch {
+	case msg.IsToUser():
+		if !quote.IsToUser() || quote.ToUserID == nil || msg.ToUserID == nil {
+			return errors.New("引用消息不属于当前会话")
+		}
+		sameDirection := quote.FromUserID == msg.FromUserID && *quote.ToUserID == *msg.ToUserID
+		reverseDirection := quote.FromUserID == *msg.ToUserID && *quote.ToUserID == msg.FromUserID
+		if !sameDirection && !reverseDirection {
+			return errors.New("引用消息不属于当前会话")
+		}
+	case msg.IsToGroup():
+		if !quote.IsToGroup() || quote.GroupID == nil || msg.GroupID == nil || *quote.GroupID != *msg.GroupID {
+			return errors.New("引用消息不属于当前群聊")
+		}
+	default:
+		return errors.New("引用消息目标无效")
 	}
 	return nil
 }
@@ -256,7 +303,7 @@ func (s *ChatService) Send(msg *model.Message) error {
 		return err
 	}
 
-	model.DB.Preload("FromUser").First(msg, msg.ID)
+	preloadMessageRelations(model.DB).First(msg, msg.ID)
 
 	switch {
 	case msg.IsBroadcast():
@@ -328,8 +375,7 @@ func (s *ChatService) getOfflineUserMessages(userID uint) ([]model.Message, erro
 	for _, peer := range peers {
 		lastReadID := s.readWatermark(userID, model.ConversationUser, peer.PeerID)
 		var msgs []model.Message
-		if err := model.DB.Where("to_user_id = ? AND from_user_id = ? AND id > ?", userID, peer.PeerID, lastReadID).
-			Preload("FromUser").
+		if err := preloadMessageRelations(model.DB.Where("to_user_id = ? AND from_user_id = ? AND id > ?", userID, peer.PeerID, lastReadID)).
 			Order("id ASC").
 			Limit(offlineSyncBatchSize).
 			Find(&msgs).Error; err != nil {
@@ -350,8 +396,7 @@ func (s *ChatService) getOfflineGroupMessages(userID uint) ([]model.Message, err
 	for _, member := range memberships {
 		lastReadID := s.readWatermark(userID, model.ConversationGroup, member.GroupID)
 		var msgs []model.Message
-		if err := model.DB.Where("group_id = ? AND from_user_id <> ? AND id > ? AND created_at >= ?", member.GroupID, userID, lastReadID, member.CreatedAt).
-			Preload("FromUser").
+		if err := preloadMessageRelations(model.DB.Where("group_id = ? AND from_user_id <> ? AND id > ? AND created_at >= ?", member.GroupID, userID, lastReadID, member.CreatedAt)).
 			Order("id ASC").
 			Limit(offlineSyncBatchSize).
 			Find(&msgs).Error; err != nil {
@@ -372,6 +417,12 @@ func (s *ChatService) readWatermark(userID uint, convType string, convID uint) u
 	return read.LastReadMsgID
 }
 
+func preloadMessageRelations(db *gorm.DB) *gorm.DB {
+	return db.Preload("FromUser").
+		Preload("QuoteMessage").
+		Preload("QuoteMessage.FromUser")
+}
+
 func (s *ChatService) GetHistory(userID, peerID uint, page, pageSize int, afterID uint) ([]model.Message, int64, error) {
 	var msgs []model.Message
 	var total int64
@@ -383,13 +434,13 @@ func (s *ChatService) GetHistory(userID, peerID uint, page, pageSize int, afterI
 
 	db := model.DB.Where(where, args...)
 	if afterID > 0 {
-		err := db.Where("id > ?", afterID).
-			Preload("FromUser").Order("id ASC").Find(&msgs).Error
+		err := preloadMessageRelations(db.Where("id > ?", afterID)).
+			Order("id ASC").Find(&msgs).Error
 		if err != nil {
 			return nil, 0, err
 		}
 	} else {
-		err := db.Preload("FromUser").
+		err := preloadMessageRelations(db).
 			Order("created_at DESC").
 			Offset((page - 1) * pageSize).
 			Limit(pageSize).
@@ -417,13 +468,13 @@ func (s *ChatService) GetGroupHistory(userID, groupID uint, page, pageSize int, 
 
 	db := model.DB.Where(baseWhere, baseArgs...)
 	if afterID > 0 {
-		err := db.Where("id > ?", afterID).
-			Preload("FromUser").Order("id ASC").Find(&msgs).Error
+		err := preloadMessageRelations(db.Where("id > ?", afterID)).
+			Order("id ASC").Find(&msgs).Error
 		if err != nil {
 			return nil, 0, err
 		}
 	} else {
-		err := db.Preload("FromUser").
+		err := preloadMessageRelations(db).
 			Order("created_at DESC").
 			Offset((page - 1) * pageSize).
 			Limit(pageSize).
@@ -436,47 +487,73 @@ func (s *ChatService) GetGroupHistory(userID, groupID uint, page, pageSize int, 
 }
 
 func (s *ChatService) SearchMessages(userID uint, scope string, targetID uint, keyword string, page, pageSize int) ([]model.Message, int64, error) {
-	keyword = strings.TrimSpace(keyword)
-	if keyword == "" {
+	return s.SearchMessagesWithParams(userID, MessageSearchParams{
+		Scope:    scope,
+		TargetID: targetID,
+		Keyword:  keyword,
+		Page:     page,
+		PageSize: pageSize,
+	})
+}
+
+func (s *ChatService) SearchMessagesWithParams(userID uint, params MessageSearchParams) ([]model.Message, int64, error) {
+	params.Keyword = strings.TrimSpace(params.Keyword)
+	if params.Keyword == "" && params.StartTime == nil && params.EndTime == nil {
 		return []model.Message{}, 0, nil
 	}
-	if page < 1 {
-		page = 1
+	if params.Page < 1 {
+		params.Page = 1
 	}
-	if pageSize < 1 {
-		pageSize = 20
+	if params.PageSize < 1 {
+		params.PageSize = 20
 	}
-	if pageSize > 50 {
-		pageSize = 50
+	if params.PageSize > 50 {
+		params.PageSize = 50
 	}
 
-	like := "%" + escapeLikePattern(strings.ToLower(keyword)) + "%"
-	query := model.DB.Model(&model.Message{}).
-		Where("(LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(file_name) LIKE ? ESCAPE '\\')", like, like)
+	query := model.DB.Model(&model.Message{})
+	if params.Keyword != "" {
+		like := "%" + escapeLikePattern(strings.ToLower(params.Keyword)) + "%"
+		query = query.Where("(LOWER(messages.content) LIKE ? ESCAPE '\\' OR LOWER(messages.file_name) LIKE ? ESCAPE '\\')", like, like)
+	}
+	if params.StartTime != nil {
+		query = query.Where("messages.created_at >= ?", *params.StartTime)
+	}
+	if params.EndTime != nil {
+		query = query.Where("messages.created_at <= ?", *params.EndTime)
+	}
 
+	scope := strings.TrimSpace(params.Scope)
+	if scope == "" {
+		scope = "user"
+	}
 	switch scope {
+	case "all", "global":
+		query = query.Joins("LEFT JOIN group_members search_gm ON search_gm.group_id = messages.group_id AND search_gm.user_id = ?", userID).
+			Where(`(
+				(messages.to_user_id IS NOT NULL AND (messages.from_user_id = ? OR messages.to_user_id = ?))
+				OR (messages.group_id IS NOT NULL AND search_gm.id IS NOT NULL AND messages.created_at >= search_gm.created_at)
+				OR (messages.to_user_id IS NULL AND messages.group_id IS NULL)
+			)`, userID, userID)
 	case "user":
-		if targetID == 0 {
+		if params.TargetID == 0 {
 			return nil, 0, errors.New("无效的搜索目标")
 		}
 		query = query.Where(
-			"(from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
-			userID, targetID, targetID, userID,
+			"(messages.from_user_id = ? AND messages.to_user_id = ?) OR (messages.from_user_id = ? AND messages.to_user_id = ?)",
+			userID, params.TargetID, params.TargetID, userID,
 		)
 	case "group":
-		if targetID == 0 {
+		if params.TargetID == 0 {
 			return nil, 0, errors.New("无效的搜索目标")
 		}
-		var memberCount int64
-		model.DB.Model(&model.GroupMember{}).
-			Where("group_id = ? AND user_id = ?", targetID, userID).
-			Count(&memberCount)
-		if memberCount == 0 {
-			return nil, 0, errors.New("不属于该群组")
+		member, err := s.getGroupMember(params.TargetID, userID)
+		if err != nil {
+			return nil, 0, err
 		}
-		query = query.Where("group_id = ?", targetID)
+		query = query.Where("messages.group_id = ? AND messages.created_at >= ?", params.TargetID, member.CreatedAt)
 	case "broadcast":
-		query = query.Where("to_user_id IS NULL AND group_id IS NULL")
+		query = query.Where("messages.to_user_id IS NULL AND messages.group_id IS NULL")
 	default:
 		return nil, 0, errors.New("无效的搜索范围")
 	}
@@ -487,10 +564,10 @@ func (s *ChatService) SearchMessages(userID uint, scope string, targetID uint, k
 	}
 
 	var msgs []model.Message
-	if err := query.Preload("FromUser").
-		Order("created_at DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
+	if err := preloadMessageRelations(query).
+		Order("messages.created_at DESC, messages.id DESC").
+		Offset((params.Page - 1) * params.PageSize).
+		Limit(params.PageSize).
 		Find(&msgs).Error; err != nil {
 		return nil, 0, err
 	}
@@ -566,7 +643,7 @@ func (s *ChatService) GetBroadcastHistory(page, pageSize int) ([]model.Message, 
 		Where("to_user_id IS NULL AND group_id IS NULL")
 	query.Count(&total)
 
-	if err := query.Preload("FromUser").
+	if err := preloadMessageRelations(query).
 		Order("created_at DESC").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
