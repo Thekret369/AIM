@@ -29,6 +29,19 @@
             </div>
             <a class="btn btn-sm" href="/contacts">联系人</a>
         </div>
+        <div class="global-search-box">
+            <input id="globalSearchInput" type="search" placeholder="全局查找消息">
+            <div class="global-search-times">
+                <input id="globalSearchStart" type="datetime-local" title="开始时间">
+                <input id="globalSearchEnd" type="datetime-local" title="结束时间">
+            </div>
+            <div class="global-search-actions">
+                <label><input id="globalSearchGrouped" type="checkbox" checked> 按会话</label>
+                <button type="button" onclick="globalSearchMessages()">查找</button>
+                <button type="button" onclick="clearGlobalSearch()">清除</button>
+            </div>
+            <div class="global-search-results hidden" id="globalSearchResults"></div>
+        </div>
         <div class="sidebar-list" id="sidebarList"></div>
     </div>
 
@@ -103,6 +116,7 @@ let lastMessages = new Map();
 let chatInitialized = false;
 let pendingOnlineSync = false;
 let onlineSyncRunning = false;
+let quotedMessageByTab = new Map();
 
 // 群相关缓存
 let groupMembersMap = new Map();   // groupId → members[]
@@ -397,6 +411,8 @@ function createTab(key, type, targetId, name) {
                 '<span class="chat-title">' + escapeHtml(name) + '</span>' +
                 '<div class="chat-header-actions">' +
                     '<input class="chat-search-input" type="search" placeholder="搜索消息">' +
+                    '<input class="chat-search-start" type="datetime-local" title="开始时间">' +
+                    '<input class="chat-search-end" type="datetime-local" title="结束时间">' +
                     '<button class="chat-search-btn" type="button">搜索</button>' +
                     '<button class="chat-search-clear hidden" type="button" title="清除搜索">&times;</button>' +
                     '<button class="btn btn-sm btn-primary group-detail-btn" type="button">群详情</button>' +
@@ -404,6 +420,7 @@ function createTab(key, type, targetId, name) {
             '</div>' +
             '<div class="chat-search-results hidden"></div>' +
             '<div class="chat-messages"></div>' +
+            '<div class="quote-compose hidden"></div>' +
             '<div class="chat-input">' +
                 '<button class="attach-btn" title="添加附件">+</button>' +
                 '<input type="text" placeholder="输入消息，@ 提及成员...">' +
@@ -415,12 +432,15 @@ function createTab(key, type, targetId, name) {
                 '<span class="chat-title">' + escapeHtml(name) + '</span>' +
                 '<div class="chat-header-actions">' +
                     '<input class="chat-search-input" type="search" placeholder="搜索消息">' +
+                    '<input class="chat-search-start" type="datetime-local" title="开始时间">' +
+                    '<input class="chat-search-end" type="datetime-local" title="结束时间">' +
                     '<button class="chat-search-btn" type="button">搜索</button>' +
                     '<button class="chat-search-clear hidden" type="button" title="清除搜索">&times;</button>' +
                 '</div>' +
             '</div>' +
             '<div class="chat-search-results hidden"></div>' +
             '<div class="chat-messages"></div>' +
+            '<div class="quote-compose hidden"></div>' +
             '<div class="chat-input">' +
                 '<button class="attach-btn" title="添加附件">+</button>' +
                 '<input type="text" placeholder="输入消息...">' +
@@ -431,9 +451,12 @@ function createTab(key, type, targetId, name) {
     var btnEl = panelEl.querySelector('.send-btn');
     var attachBtn = panelEl.querySelector('.attach-btn');
     var searchInputEl = panelEl.querySelector('.chat-search-input');
+    var searchStartEl = panelEl.querySelector('.chat-search-start');
+    var searchEndEl = panelEl.querySelector('.chat-search-end');
     var searchBtnEl = panelEl.querySelector('.chat-search-btn');
     var searchClearEl = panelEl.querySelector('.chat-search-clear');
     var searchResultsEl = panelEl.querySelector('.chat-search-results');
+    var quoteComposeEl = panelEl.querySelector('.quote-compose');
     inputEl.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') sendMessage(key);
     });
@@ -451,6 +474,14 @@ function createTab(key, type, targetId, name) {
         } else if (e.key === 'Escape') {
             clearSearchResults(key);
         }
+    });
+    [searchStartEl, searchEndEl].forEach(function(el) {
+        el.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchMessagesInTab(key);
+            }
+        });
     });
 
     // 群聊 @ 提及支持
@@ -474,6 +505,19 @@ function createTab(key, type, targetId, name) {
             if (tab.hasMore && !tab._loading) { tab._loading = true; loadHistory(key, tab.historyPage); }
         }
     });
+    panelMessagesEl.addEventListener('click', function(e) {
+        var quoteBtn = e.target.closest('.quote-reply-btn');
+        if (quoteBtn) {
+            e.preventDefault();
+            startQuoteReply(key, parseInt(quoteBtn.dataset.msgId || '0', 10));
+            return;
+        }
+        var quoteRef = e.target.closest('.quote-ref');
+        if (quoteRef) {
+            e.preventDefault();
+            focusMessageElement(key, parseInt(quoteRef.dataset.quoteId || '0', 10));
+        }
+    });
 
     var headerEl = panelEl.querySelector('.chat-header');
 
@@ -482,7 +526,8 @@ function createTab(key, type, targetId, name) {
         messages: [], historyPage: 1, hasMore: true, _loading: false,
         panelEl: panelEl, messagesEl: panelMessagesEl,
         inputEl: inputEl, headerEl: headerEl, tabEl: tabEl,
-        searchInputEl: searchInputEl, searchResultsEl: searchResultsEl, searchClearEl: searchClearEl
+        searchInputEl: searchInputEl, searchStartEl: searchStartEl, searchEndEl: searchEndEl,
+        searchResultsEl: searchResultsEl, searchClearEl: searchClearEl, quoteComposeEl: quoteComposeEl
     });
     augmentTab(key, chatTabs.get(key));
 
@@ -523,6 +568,7 @@ function closeTab(key) {
     var idx = keys.indexOf(key);
     var fallbackKey = keys[idx + 1] || keys[idx - 1] || null;
     if (currentGroupPanelKey === key) closeGroupPanel();
+    quotedMessageByTab.delete(key);
     tab.panelEl.remove(); tab.tabEl.remove(); chatTabs.delete(key);
     if (wasActive) {
         activeTabKey = null;
@@ -989,7 +1035,21 @@ function formatMsgTime(createdAt) {
 	    return (d.getMonth() + 1) + '-' + d.getDate() + ' ' + time;
 	}
 
-	function renderOneMessage(msg) {
+function quoteMessageSummary(msg) {
+    if (!msg) return '';
+    return getPreviewText(msg).replace(/\s+/g, ' ').substring(0, 80);
+}
+
+function renderQuoteMessage(quote) {
+    if (!quote) return '';
+    var sender = quote.from_user ? (quote.from_user.nickname || quote.from_user.username) : ('用户' + quote.from_user_id);
+    return '<button class="quote-ref" type="button" data-quote-id="' + quote.id + '">' +
+        '<span class="quote-ref-sender">' + escapeHtml(sender) + '</span>' +
+        '<span class="quote-ref-text">' + escapeHtml(quoteMessageSummary(quote)) + '</span>' +
+    '</button>';
+}
+
+function renderOneMessage(msg) {
     var isMe = msg.from_user_id === getUserId();
     var cls = isMe ? 'from-me' : '';
     var name = msg.from_user ? (msg.from_user.nickname || msg.from_user.username) : ('用户' + msg.from_user_id);
@@ -1016,10 +1076,15 @@ function formatMsgTime(createdAt) {
             body = escapeHtml(msg.content);
     }
     var timeStr = formatMsgTime(msg.created_at);
+    var quoteHTML = renderQuoteMessage(msg.quote_message);
+    var quoteAction = (msg.to_user_id || msg.group_id)
+        ? '<button class="quote-reply-btn" type="button" data-msg-id="' + msg.id + '" title="引用回复">引用</button>'
+        : '';
     var html = '<div class="msg ' + cls + '" data-msg-id="' + msg.id + '">' +
         '<div class="bubble">' +
             '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" class="text-link">' + escapeHtml(name) + '</a>' +
-            (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + '</div>' +
+            (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + quoteAction + '</div>' +
+            quoteHTML +
             body +
         '</div>' +
     '</div>';
@@ -1045,6 +1110,57 @@ function renderAllMessages(tab) {
     var html = '';
     for (var i = 0; i < tab.messages.length; i++) html += renderOneMessage(tab.messages[i]);
     tab.messagesEl.innerHTML = html;
+}
+
+function findTabMessage(tab, msgId) {
+    if (!tab || !msgId) return null;
+    for (var i = 0; i < tab.messages.length; i++) {
+        if (tab.messages[i].id === msgId) return tab.messages[i];
+    }
+    return null;
+}
+
+function startQuoteReply(key, msgId) {
+    var tab = chatTabs.get(key);
+    var msg = findTabMessage(tab, msgId);
+    if (!tab || !msg) return;
+    quotedMessageByTab.set(key, msg);
+    renderQuoteCompose(key);
+    tab.inputEl.focus();
+}
+
+function clearQuoteReply(key) {
+    quotedMessageByTab.delete(key);
+    renderQuoteCompose(key);
+}
+
+function renderQuoteCompose(key) {
+    var tab = chatTabs.get(key);
+    if (!tab || !tab.quoteComposeEl) return;
+    var msg = quotedMessageByTab.get(key);
+    if (!msg) {
+        tab.quoteComposeEl.classList.add('hidden');
+        tab.quoteComposeEl.innerHTML = '';
+        return;
+    }
+    var sender = msg.from_user ? (msg.from_user.nickname || msg.from_user.username) : ('用户' + msg.from_user_id);
+    tab.quoteComposeEl.classList.remove('hidden');
+    tab.quoteComposeEl.innerHTML =
+        '<div class="quote-compose-content">' +
+            '<span class="quote-compose-label">引用 ' + escapeHtml(sender) + '</span>' +
+            '<span class="quote-compose-text">' + escapeHtml(quoteMessageSummary(msg)) + '</span>' +
+        '</div>' +
+        '<button type="button" class="quote-compose-clear" onclick="clearQuoteReply(\'' + escapeHtml(key) + '\')">&times;</button>';
+}
+
+function focusMessageElement(key, msgId) {
+    var tab = chatTabs.get(key);
+    if (!tab || !msgId) return;
+    var el = tab.messagesEl.querySelector('.msg[data-msg-id="' + msgId + '"]');
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('search-hit');
+    setTimeout(function() { el.classList.remove('search-hit'); }, 1600);
 }
 
 function mergeMessageState(existing, incoming) {
@@ -1234,8 +1350,11 @@ async function uploadAndSend(key, file) {
         if (!tab) return;
         if (tab.type === 'user') msg.to_user_id = tab.targetId;
         else if (tab.type === 'group') msg.group_id = tab.targetId;
+        var quoted = quotedMessageByTab.get(key);
+        if (quoted) msg.quote_message_id = quoted.id;
 
         sendWS(msg);
+        clearQuoteReply(key);
     } catch(e) {
         alert('上传失败: ' + e.message);
     }
@@ -1269,9 +1388,12 @@ function sendMessage(key) {
         }
         if (mentionIds.length > 0) msg.mentions = JSON.stringify(mentionIds);
     }
+    var quoted = quotedMessageByTab.get(key || activeTabKey);
+    if (quoted) msg.quote_message_id = quoted.id;
 
     sendWS(msg);
     tab.inputEl.value = '';
+    clearQuoteReply(key || activeTabKey);
     if (tab.type === 'user') sendTyping(tab.targetId, 0, false);
     else if (tab.type === 'group') sendTyping(0, tab.targetId, false);
 };
@@ -1378,13 +1500,17 @@ async function searchMessagesInTab(key) {
     var tab = chatTabs.get(key);
     if (!tab || !tab.searchInputEl) return;
     var q = (tab.searchInputEl.value || '').trim();
-    if (!q) { clearSearchResults(key); return; }
+    var startTime = tab.searchStartEl ? tab.searchStartEl.value : '';
+    var endTime = tab.searchEndEl ? tab.searchEndEl.value : '';
+    if (!q && !startTime && !endTime) { clearSearchResults(key); return; }
 
     var url = '/search/messages?type=' + encodeURIComponent(tab.type) +
         '&q=' + encodeURIComponent(q) + '&page=1&page_size=30';
     if (tab.type === 'user' || tab.type === 'group') {
         url += '&target_id=' + encodeURIComponent(tab.targetId);
     }
+    if (startTime) url += '&start_time=' + encodeURIComponent(startTime);
+    if (endTime) url += '&end_time=' + encodeURIComponent(endTime);
 
     tab.searchResultsEl.classList.remove('hidden');
     tab.searchClearEl.classList.remove('hidden');
@@ -1433,6 +1559,8 @@ function clearSearchResults(key) {
     var tab = chatTabs.get(key);
     if (!tab) return;
     if (tab.searchInputEl) tab.searchInputEl.value = '';
+    if (tab.searchStartEl) tab.searchStartEl.value = '';
+    if (tab.searchEndEl) tab.searchEndEl.value = '';
     if (tab.searchResultsEl) {
         tab.searchResultsEl.classList.add('hidden');
         tab.searchResultsEl.innerHTML = '';
@@ -1445,21 +1573,11 @@ function focusSearchResult(key, msg) {
     var tab = chatTabs.get(key);
     if (!tab) return;
 
-    var exists = false;
-    for (var i = 0; i < tab.messages.length; i++) {
-        if (tab.messages[i].id === msg.id) { exists = true; break; }
-    }
-    if (!exists) {
-        tab.messages.push(msg);
-        tab.messages.sort(function(a, b) { return a.id - b.id; });
+    if (upsertMessage(tab.messages, msg)) {
         renderAllMessages(tab);
     }
 
-    var el = tab.messagesEl.querySelector('.msg[data-msg-id="' + msg.id + '"]');
-    if (!el) return;
-    el.scrollIntoView({ block: 'center' });
-    el.classList.add('search-hit');
-    setTimeout(function() { el.classList.remove('search-hit'); }, 1600);
+    focusMessageElement(key, msg.id);
 }
 
 function highlightSearchText(text, q) {
@@ -1473,6 +1591,117 @@ function highlightSearchText(text, q) {
     return escapeHtml(text.slice(0, idx)) +
         '<mark>' + escapeHtml(text.slice(idx, idx + q.length)) + '</mark>' +
         escapeHtml(text.slice(idx + q.length));
+}
+
+async function globalSearchMessages() {
+    var inputEl = document.getElementById('globalSearchInput');
+    var startEl = document.getElementById('globalSearchStart');
+    var endEl = document.getElementById('globalSearchEnd');
+    var groupedEl = document.getElementById('globalSearchGrouped');
+    var resultsEl = document.getElementById('globalSearchResults');
+    var q = (inputEl.value || '').trim();
+    var startTime = startEl.value || '';
+    var endTime = endEl.value || '';
+    var grouped = groupedEl.checked;
+    if (!q && !startTime && !endTime) { clearGlobalSearch(); return; }
+
+    var url = '/search/messages?type=all&page=1&page_size=50&q=' + encodeURIComponent(q);
+    if (startTime) url += '&start_time=' + encodeURIComponent(startTime);
+    if (endTime) url += '&end_time=' + encodeURIComponent(endTime);
+    if (grouped) url += '&group_by=conversation';
+
+    resultsEl.classList.remove('hidden');
+    resultsEl.innerHTML = '<div class="search-state">查找中...</div>';
+    try {
+        var data = await api('GET', url);
+        renderGlobalSearchResults(data, q, grouped);
+    } catch(e) {
+        resultsEl.innerHTML = '<div class="search-state">查找失败: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+function clearGlobalSearch() {
+    document.getElementById('globalSearchInput').value = '';
+    document.getElementById('globalSearchStart').value = '';
+    document.getElementById('globalSearchEnd').value = '';
+    var resultsEl = document.getElementById('globalSearchResults');
+    resultsEl.classList.add('hidden');
+    resultsEl.innerHTML = '';
+}
+
+function renderGlobalSearchResults(data, q, grouped) {
+    var resultsEl = document.getElementById('globalSearchResults');
+    var hits = [];
+    var html = '<div class="search-summary">找到 ' + (data.total || 0) + ' 条结果</div>';
+
+    if (grouped && data.conversations && data.conversations.length) {
+        for (var i = 0; i < data.conversations.length; i++) {
+            var group = data.conversations[i];
+            html += '<div class="global-search-group">' + escapeHtml(conversationTitle(group.conversation_type, group.conversation_id)) +
+                '<span>' + group.count + '</span></div>';
+            var msgs = group.messages || [];
+            for (var j = 0; j < msgs.length; j++) {
+                hits.push(msgs[j]);
+                html += globalSearchResultButton(hits.length - 1, msgs[j], q);
+            }
+        }
+    } else {
+        var messages = data.messages || [];
+        for (var k = 0; k < messages.length; k++) {
+            hits.push(messages[k]);
+            html += globalSearchResultButton(hits.length - 1, messages[k], q);
+        }
+    }
+
+    if (hits.length === 0) html += '<div class="search-state">没有找到相关消息</div>';
+    resultsEl.innerHTML = html;
+    resultsEl.querySelectorAll('.global-search-result').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var idx = parseInt(this.dataset.index || '-1', 10);
+            if (idx >= 0 && hits[idx]) openSearchResultMessage(hits[idx]);
+        });
+    });
+}
+
+function globalSearchResultButton(index, msg, q) {
+    var sender = msg.from_user ? (msg.from_user.nickname || msg.from_user.username) : ('用户' + msg.from_user_id);
+    return '<button class="search-result global-search-result" type="button" data-index="' + index + '">' +
+        '<span class="search-result-meta">' + escapeHtml(conversationTitleForMessage(msg)) + ' · ' +
+            escapeHtml(sender) + ' · ' + escapeHtml(formatMsgTime(msg.created_at)) + '</span>' +
+        '<span class="search-result-text">' + highlightSearchText(getPreviewText(msg), q) + '</span>' +
+    '</button>';
+}
+
+function conversationTitleForMessage(msg) {
+    var conv = conversationFromMessage(msg);
+    return conversationTitle(conv.type, conv.targetId);
+}
+
+function conversationTitle(type, targetId) {
+    if (type === 'broadcast') return '广播消息';
+    var key = type + ':' + targetId;
+    var conv = conversations.find(function(c) { return c.key === key; });
+    if (conv) return conv.name;
+    if (type === 'group') return '群组' + targetId;
+    return '用户' + targetId;
+}
+
+function conversationFromMessage(msg) {
+    if (msg.group_id !== null && msg.group_id !== undefined && msg.group_id !== 0) {
+        return { key: 'group:' + msg.group_id, type: 'group', targetId: msg.group_id };
+    }
+    if (msg.to_user_id !== null && msg.to_user_id !== undefined && msg.to_user_id !== 0) {
+        var peerId = msg.from_user_id === getUserId() ? msg.to_user_id : msg.from_user_id;
+        return { key: 'user:' + peerId, type: 'user', targetId: peerId };
+    }
+    return { key: 'broadcast', type: 'broadcast', targetId: 0 };
+}
+
+function openSearchResultMessage(msg) {
+    var conv = conversationFromMessage(msg);
+    ensureConversationForMessage(conv.key, msg);
+    openOrSwitchTab(conv.key, conv.type, conv.targetId, conversationTitle(conv.type, conv.targetId));
+    setTimeout(function() { focusSearchResult(conv.key, msg); }, 120);
 }
 
 // ========================================
@@ -1545,6 +1774,16 @@ onWSOpen = function() {
 // 初始化
 // ========================================
 async function init() {
+    ['globalSearchInput', 'globalSearchStart', 'globalSearchEnd'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                globalSearchMessages();
+            }
+        });
+    });
     await Promise.all([loadFriends(), loadGroups(), loadAIBots(), loadOnlineStatus()]);
     await loadGroupMetadata();
     buildConversations();
