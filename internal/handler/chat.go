@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"AIM/internal/middleware"
+	"AIM/internal/model"
 	"AIM/internal/service"
 	"AIM/internal/ws"
 
@@ -123,7 +126,17 @@ func (h *ChatHandler) SearchMessages(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	scope := strings.TrimSpace(c.DefaultQuery("type", "user"))
 	keyword := strings.TrimSpace(c.Query("q"))
-	if keyword == "" {
+	startTime, err := parseSearchTime(c.Query("start_time"), false)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 start_time"})
+		return
+	}
+	endTime, err := parseSearchTime(c.Query("end_time"), true)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 end_time"})
+		return
+	}
+	if keyword == "" && startTime == nil && endTime == nil {
 		c.JSON(http.StatusOK, gin.H{"messages": []interface{}{}, "total": 0})
 		return
 	}
@@ -140,7 +153,15 @@ func (h *ChatHandler) SearchMessages(c *gin.Context) {
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	msgs, total, err := h.Svc.SearchMessages(userID, scope, targetID, keyword, page, pageSize)
+	msgs, total, err := h.Svc.SearchMessagesWithParams(userID, service.MessageSearchParams{
+		Scope:     scope,
+		TargetID:  targetID,
+		Keyword:   keyword,
+		StartTime: startTime,
+		EndTime:   endTime,
+		Page:      page,
+		PageSize:  pageSize,
+	})
 	if err != nil {
 		status := http.StatusBadRequest
 		if scope == "group" {
@@ -149,7 +170,75 @@ func (h *ChatHandler) SearchMessages(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"messages": msgs, "total": total})
+	resp := gin.H{"messages": msgs, "total": total}
+	if strings.EqualFold(c.Query("group_by"), "conversation") {
+		resp["conversations"] = groupMessagesByConversation(userID, msgs)
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func parseSearchTime(raw string, endOfDay bool) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &t, nil
+	}
+	layouts := []string{"2006-01-02T15:04", "2006-01-02 15:04", "2006-01-02"}
+	for _, layout := range layouts {
+		t, err := time.ParseInLocation(layout, raw, time.Local)
+		if err != nil {
+			continue
+		}
+		if layout == "2006-01-02" && endOfDay {
+			t = t.Add(24*time.Hour - time.Nanosecond)
+		}
+		return &t, nil
+	}
+	return nil, errors.New("invalid time")
+}
+
+type searchConversationGroup struct {
+	ConversationType string          `json:"conversation_type"`
+	ConversationID   uint            `json:"conversation_id"`
+	Count            int             `json:"count"`
+	Messages         []model.Message `json:"messages"`
+}
+
+func groupMessagesByConversation(userID uint, msgs []model.Message) []searchConversationGroup {
+	groups := make([]searchConversationGroup, 0)
+	index := make(map[string]int)
+	for _, msg := range msgs {
+		convType, convID := messageConversation(userID, msg)
+		key := convType + ":" + strconv.FormatUint(uint64(convID), 10)
+		pos, ok := index[key]
+		if !ok {
+			pos = len(groups)
+			index[key] = pos
+			groups = append(groups, searchConversationGroup{
+				ConversationType: convType,
+				ConversationID:   convID,
+				Messages:         []model.Message{},
+			})
+		}
+		groups[pos].Messages = append(groups[pos].Messages, msg)
+		groups[pos].Count++
+	}
+	return groups
+}
+
+func messageConversation(userID uint, msg model.Message) (string, uint) {
+	if msg.GroupID != nil && *msg.GroupID > 0 {
+		return model.ConversationGroup, *msg.GroupID
+	}
+	if msg.ToUserID != nil && *msg.ToUserID > 0 {
+		if msg.FromUserID == userID {
+			return model.ConversationUser, *msg.ToUserID
+		}
+		return model.ConversationUser, msg.FromUserID
+	}
+	return "broadcast", 0
 }
 
 // GetGroupReads 获取群内各用户的最后已读消息 ID，用于前端重建已读扇形图
