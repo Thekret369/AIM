@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"AIM/internal/model"
 	"AIM/internal/ws"
@@ -409,6 +410,111 @@ func TestSearchMessagesGroupScopeRequiresMembership(t *testing.T) {
 
 	if _, _, err := chatSvc.SearchMessages(outsider.ID, "group", group.ID, "needle", 1, 20); err == nil {
 		t.Fatal("expected non-member group search to be rejected")
+	}
+}
+
+func TestSendFromClientAcceptsSameConversationQuote(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "quote_alice")
+	bob := createSecurityUser(t, "quote_bob")
+
+	bobID := bob.ID
+	quote := &model.Message{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &bobID, Content: "original quote"}
+	if err := model.DB.Create(quote).Error; err != nil {
+		t.Fatalf("create quote message: %v", err)
+	}
+
+	aliceID := alice.ID
+	reply := &model.Message{
+		Type:           model.MsgText,
+		FromUserID:     bob.ID,
+		ToUserID:       &aliceID,
+		QuoteMessageID: &quote.ID,
+		Content:        "reply with quote",
+	}
+	if err := chatSvc.SendFromClient(reply); err != nil {
+		t.Fatalf("send quoted reply: %v", err)
+	}
+	if reply.QuoteMessage == nil || reply.QuoteMessage.ID != quote.ID {
+		t.Fatalf("expected quote message to be preloaded, got %+v", reply.QuoteMessage)
+	}
+}
+
+func TestSendFromClientRejectsCrossConversationQuote(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "quote_reject_alice")
+	bob := createSecurityUser(t, "quote_reject_bob")
+	charlie := createSecurityUser(t, "quote_reject_charlie")
+
+	charlieID := charlie.ID
+	quote := &model.Message{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &charlieID, Content: "other conversation"}
+	if err := model.DB.Create(quote).Error; err != nil {
+		t.Fatalf("create quote message: %v", err)
+	}
+
+	bobID := bob.ID
+	reply := &model.Message{
+		Type:           model.MsgText,
+		FromUserID:     alice.ID,
+		ToUserID:       &bobID,
+		QuoteMessageID: &quote.ID,
+		Content:        "invalid quote",
+	}
+	if err := chatSvc.SendFromClient(reply); err == nil {
+		t.Fatal("expected cross-conversation quote to be rejected")
+	}
+}
+
+func TestSearchMessagesGlobalAndTimeRange(t *testing.T) {
+	chatSvc, groupSvc := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "global_search_alice")
+	bob := createSecurityUser(t, "global_search_bob")
+	charlie := createSecurityUser(t, "global_search_charlie")
+	group, err := groupSvc.CreateGroup("global_search_group", "", alice.ID)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := groupSvc.JoinGroup(group.ID, bob.ID); err != nil {
+		t.Fatalf("join group: %v", err)
+	}
+
+	base := time.Now().Add(time.Minute)
+	bobID := bob.ID
+	aliceID := alice.ID
+	messages := []*model.Message{
+		{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &bobID, Content: "needle direct", CreatedAt: base.Add(10 * time.Minute)},
+		{Type: model.MsgText, FromUserID: bob.ID, ToUserID: &aliceID, Content: "needle reply", CreatedAt: base.Add(20 * time.Minute)},
+		{Type: model.MsgText, FromUserID: bob.ID, GroupID: &group.ID, Content: "needle group", CreatedAt: base.Add(30 * time.Minute)},
+		{Type: model.MsgText, FromUserID: charlie.ID, ToUserID: &bobID, Content: "needle private outsider", CreatedAt: base.Add(40 * time.Minute)},
+		{Type: model.MsgText, FromUserID: charlie.ID, Content: "needle broadcast", CreatedAt: base.Add(50 * time.Minute)},
+		{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &bobID, Content: "needle too old", CreatedAt: base.Add(-10 * time.Minute)},
+	}
+	for _, msg := range messages {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("create search message: %v", err)
+		}
+	}
+
+	start := base
+	end := base.Add(45 * time.Minute)
+	got, total, err := chatSvc.SearchMessagesWithParams(alice.ID, MessageSearchParams{
+		Scope:     "all",
+		Keyword:   "needle",
+		StartTime: &start,
+		EndTime:   &end,
+		Page:      1,
+		PageSize:  20,
+	})
+	if err != nil {
+		t.Fatalf("global search: %v", err)
+	}
+	if total != 3 || len(got) != 3 {
+		t.Fatalf("expected 3 accessible in-range messages, total=%d len=%d", total, len(got))
+	}
+	for _, msg := range got {
+		if msg.Content == "needle private outsider" || msg.Content == "needle too old" {
+			t.Fatalf("search returned out-of-scope message: %q", msg.Content)
+		}
 	}
 }
 
