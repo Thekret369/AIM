@@ -33,6 +33,9 @@ type Message struct {
 	Content    string      `gorm:"type:text" json:"content"`            // 文本内容或文件 URL
 	FileName   string      `gorm:"size:256" json:"file_name,omitempty"` // 文件/图片/音频的原文件名
 	FileSize   int64       `json:"file_size,omitempty"`                 // 文件大小(字节)
+	// QuoteMessageID 指向被引用的消息，非空时表示这是一条引用回复。
+	QuoteMessageID *uint    `gorm:"index" json:"quote_message_id,omitempty"`
+	QuoteMessage   *Message `gorm:"foreignKey:QuoteMessageID" json:"quote_message,omitempty"`
 	// RecipientCount 记录群消息发送时除发送者外的可读成员数，用于稳定历史已读分母
 	RecipientCount int `gorm:"default:0" json:"recipient_count,omitempty"`
 	// ThumbnailURL 缩略图 URL（仅图片消息）

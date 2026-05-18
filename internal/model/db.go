@@ -55,6 +55,7 @@ func EnsureIndexes() error {
 		"CREATE INDEX IF NOT EXISTS idx_messages_from_to_id ON messages (from_user_id, to_user_id, id)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_to_from_id ON messages (to_user_id, from_user_id, id)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_group_id_id ON messages (group_id, id)",
+		"CREATE INDEX IF NOT EXISTS idx_messages_quote_message_id ON messages (quote_message_id)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_from_to_created ON messages (from_user_id, to_user_id, created_at)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_to_from_created ON messages (to_user_id, from_user_id, created_at)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_group_created ON messages (group_id, created_at)",
