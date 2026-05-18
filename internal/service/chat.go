@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"sort"
 	"strings"
 
 	"AIM/internal/model"
@@ -15,6 +16,8 @@ type ChatService struct {
 	Hub         *ws.Hub
 	AIResponder AIResponder
 }
+
+const offlineSyncBatchSize = 100
 
 // AIResponder 由 AI 服务实现，聊天服务只负责在消息入库后通知它。
 type AIResponder interface {
@@ -271,6 +274,102 @@ func (s *ChatService) Send(msg *model.Message) error {
 		}
 	}
 	return nil
+}
+
+// SyncOfflineMessages pushes unread messages after a user reconnects.
+func (s *ChatService) SyncOfflineMessages(userID uint) {
+	if s == nil || s.Hub == nil || userID == 0 {
+		return
+	}
+	msgs, err := s.getOfflineSyncMessages(userID)
+	if err != nil {
+		return
+	}
+	for i := range msgs {
+		msg := msgs[i]
+		s.Hub.SendToUser(userID, &msg)
+	}
+}
+
+func (s *ChatService) getOfflineSyncMessages(userID uint) ([]model.Message, error) {
+	if userID == 0 {
+		return nil, nil
+	}
+
+	msgs, err := s.getOfflineUserMessages(userID)
+	if err != nil {
+		return nil, err
+	}
+	groupMsgs, err := s.getOfflineGroupMessages(userID)
+	if err != nil {
+		return nil, err
+	}
+	msgs = append(msgs, groupMsgs...)
+	sort.Slice(msgs, func(i, j int) bool {
+		return msgs[i].ID < msgs[j].ID
+	})
+	return msgs, nil
+}
+
+func (s *ChatService) getOfflineUserMessages(userID uint) ([]model.Message, error) {
+	type peerRow struct {
+		PeerID uint
+	}
+	var peers []peerRow
+	if err := model.DB.Model(&model.Message{}).
+		Select("from_user_id AS peer_id").
+		Where("to_user_id = ? AND from_user_id <> ?", userID, userID).
+		Group("from_user_id").
+		Find(&peers).Error; err != nil {
+		return nil, err
+	}
+
+	var result []model.Message
+	for _, peer := range peers {
+		lastReadID := s.readWatermark(userID, model.ConversationUser, peer.PeerID)
+		var msgs []model.Message
+		if err := model.DB.Where("to_user_id = ? AND from_user_id = ? AND id > ?", userID, peer.PeerID, lastReadID).
+			Preload("FromUser").
+			Order("id ASC").
+			Limit(offlineSyncBatchSize).
+			Find(&msgs).Error; err != nil {
+			return nil, err
+		}
+		result = append(result, msgs...)
+	}
+	return result, nil
+}
+
+func (s *ChatService) getOfflineGroupMessages(userID uint) ([]model.Message, error) {
+	var memberships []model.GroupMember
+	if err := model.DB.Where("user_id = ?", userID).Find(&memberships).Error; err != nil {
+		return nil, err
+	}
+
+	var result []model.Message
+	for _, member := range memberships {
+		lastReadID := s.readWatermark(userID, model.ConversationGroup, member.GroupID)
+		var msgs []model.Message
+		if err := model.DB.Where("group_id = ? AND from_user_id <> ? AND id > ? AND created_at >= ?", member.GroupID, userID, lastReadID, member.CreatedAt).
+			Preload("FromUser").
+			Order("id ASC").
+			Limit(offlineSyncBatchSize).
+			Find(&msgs).Error; err != nil {
+			return nil, err
+		}
+		result = append(result, msgs...)
+	}
+	return result, nil
+}
+
+func (s *ChatService) readWatermark(userID uint, convType string, convID uint) uint {
+	var read model.MessageRead
+	if err := model.DB.Select("last_read_msg_id").
+		Where("user_id = ? AND conversation_type = ? AND conversation_id = ?", userID, convType, convID).
+		First(&read).Error; err != nil {
+		return 0
+	}
+	return read.LastReadMsgID
 }
 
 func (s *ChatService) GetHistory(userID, peerID uint, page, pageSize int, afterID uint) ([]model.Message, int64, error) {

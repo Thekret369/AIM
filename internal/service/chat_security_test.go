@@ -411,3 +411,59 @@ func TestSearchMessagesGroupScopeRequiresMembership(t *testing.T) {
 		t.Fatal("expected non-member group search to be rejected")
 	}
 }
+
+func TestOfflineSyncMessagesUseReadWatermarks(t *testing.T) {
+	chatSvc, groupSvc := setupChatSecurityTest(t)
+	sender := createSecurityUser(t, "offline_sender")
+	receiver := createSecurityUser(t, "offline_receiver")
+
+	receiverID := receiver.ID
+	first := &model.Message{Type: model.MsgText, FromUserID: sender.ID, ToUserID: &receiverID, Content: "already read"}
+	second := &model.Message{Type: model.MsgText, FromUserID: sender.ID, ToUserID: &receiverID, Content: "offline unread"}
+	if err := model.DB.Create(first).Error; err != nil {
+		t.Fatalf("create first direct message: %v", err)
+	}
+	if err := model.DB.Create(second).Error; err != nil {
+		t.Fatalf("create second direct message: %v", err)
+	}
+
+	peerID := sender.ID
+	if err := chatSvc.saveReadProgress(receiver.ID, model.ConversationUser, sender.ID, &peerID, nil, first.ID); err != nil {
+		t.Fatalf("save direct read progress: %v", err)
+	}
+
+	group, err := groupSvc.CreateGroup("offline_group", "", sender.ID)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := groupSvc.JoinGroup(group.ID, receiver.ID); err != nil {
+		t.Fatalf("join group: %v", err)
+	}
+	selfGroupMsg := &model.Message{Type: model.MsgText, FromUserID: receiver.ID, GroupID: &group.ID, Content: "self group"}
+	groupMsg := &model.Message{Type: model.MsgText, FromUserID: sender.ID, GroupID: &group.ID, Content: "group offline"}
+	if err := model.DB.Create(selfGroupMsg).Error; err != nil {
+		t.Fatalf("create self group message: %v", err)
+	}
+	if err := model.DB.Create(groupMsg).Error; err != nil {
+		t.Fatalf("create group message: %v", err)
+	}
+
+	msgs, err := chatSvc.getOfflineSyncMessages(receiver.ID)
+	if err != nil {
+		t.Fatalf("get offline sync messages: %v", err)
+	}
+
+	got := make(map[uint]bool)
+	for _, msg := range msgs {
+		got[msg.ID] = true
+	}
+	if got[first.ID] {
+		t.Fatalf("already read direct message was included")
+	}
+	if got[selfGroupMsg.ID] {
+		t.Fatalf("receiver's own group message was included")
+	}
+	if !got[second.ID] || !got[groupMsg.ID] {
+		t.Fatalf("expected unread direct and group messages, got ids=%v", got)
+	}
+}
