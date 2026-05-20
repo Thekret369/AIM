@@ -4,6 +4,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"AIM/internal/service"
 
@@ -63,7 +64,23 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 // Logout 退出登录
 func (h *AuthHandler) Logout(c *gin.Context) {
+	tokenStr := extractBearerToken(c.GetHeader("Authorization"))
+	if tokenStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少认证令牌"})
+		return
+	}
+	if err := h.Svc.RevokeToken(tokenStr); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "已退出"})
+}
+
+func extractBearerToken(header string) string {
+	if !strings.HasPrefix(header, "Bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 }
 
 // GetProfile 获取当前用户个人信息
