@@ -62,6 +62,20 @@ func createSecurityUser(t *testing.T, username string) *model.User {
 	return user
 }
 
+func createAcceptedFriendPair(t *testing.T, userID, friendID uint) {
+	t.Helper()
+
+	rels := []model.FriendRelation{
+		{UserID: userID, FriendID: friendID, Status: "accepted"},
+		{UserID: friendID, FriendID: userID, Status: "accepted"},
+	}
+	for i := range rels {
+		if err := model.DB.Create(&rels[i]).Error; err != nil {
+			t.Fatalf("create accepted friend relation: %v", err)
+		}
+	}
+}
+
 func TestSendFromClientRejectsBroadcast(t *testing.T) {
 	chatSvc, _ := setupChatSecurityTest(t)
 	user := createSecurityUser(t, "ws_broadcast_user")
@@ -80,6 +94,71 @@ func TestSendFromClientRejectsBroadcast(t *testing.T) {
 	model.DB.Model(&model.Message{}).Where("content = ?", msg.Content).Count(&count)
 	if count != 0 {
 		t.Fatalf("rejected client broadcast was persisted, count=%d", count)
+	}
+}
+
+func TestSendFromClientRejectsUnknownMessageType(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "type_alice")
+	bob := createSecurityUser(t, "type_bob")
+	createAcceptedFriendPair(t, alice.ID, bob.ID)
+
+	toBob := bob.ID
+	msg := &model.Message{
+		Type:       model.MessageType("admin"),
+		FromUserID: alice.ID,
+		ToUserID:   &toBob,
+		Content:    "invalid type",
+	}
+
+	if err := chatSvc.SendFromClient(msg); err == nil {
+		t.Fatal("expected unknown message type to be rejected")
+	}
+}
+
+func TestSendFromClientRejectsNonFriendDirectMessage(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "direct_alice")
+	bob := createSecurityUser(t, "direct_bob")
+
+	toBob := bob.ID
+	msg := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: alice.ID,
+		ToUserID:   &toBob,
+		Content:    "non friend direct",
+	}
+
+	if err := chatSvc.SendFromClient(msg); err == nil {
+		t.Fatal("expected non-friend direct message to be rejected")
+	}
+
+	var count int64
+	model.DB.Model(&model.Message{}).Where("content = ?", msg.Content).Count(&count)
+	if count != 0 {
+		t.Fatalf("rejected direct message was persisted, count=%d", count)
+	}
+}
+
+func TestSendFromClientAcceptsFriendDirectMessage(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "friend_alice")
+	bob := createSecurityUser(t, "friend_bob")
+	createAcceptedFriendPair(t, alice.ID, bob.ID)
+
+	toBob := bob.ID
+	msg := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: alice.ID,
+		ToUserID:   &toBob,
+		Content:    "friend direct",
+	}
+
+	if err := chatSvc.SendFromClient(msg); err != nil {
+		t.Fatalf("send friend direct message: %v", err)
+	}
+	if msg.ID == 0 {
+		t.Fatal("expected direct message to be persisted")
 	}
 }
 
@@ -421,6 +500,7 @@ func TestSendFromClientAcceptsSameConversationQuote(t *testing.T) {
 	chatSvc, _ := setupChatSecurityTest(t)
 	alice := createSecurityUser(t, "quote_alice")
 	bob := createSecurityUser(t, "quote_bob")
+	createAcceptedFriendPair(t, alice.ID, bob.ID)
 
 	bobID := bob.ID
 	quote := &model.Message{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &bobID, Content: "original quote"}
