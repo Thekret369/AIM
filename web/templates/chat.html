@@ -117,6 +117,7 @@ let chatInitialized = false;
 let pendingOnlineSync = false;
 let onlineSyncRunning = false;
 let quotedMessageByTab = new Map();
+let pendingSends = new Map();
 
 // 群相关缓存
 let groupMembersMap = new Map();   // groupId → members[]
@@ -1353,7 +1354,8 @@ async function uploadAndSend(key, file) {
         var quoted = quotedMessageByTab.get(key);
         if (quoted) msg.quote_message_id = quoted.id;
 
-        sendWS(msg);
+        var requestId = sendWS(msg);
+        registerPendingSend(requestId, key, msg);
         clearQuoteReply(key);
     } catch(e) {
         alert('上传失败: ' + e.message);
@@ -1391,7 +1393,8 @@ function sendMessage(key) {
     var quoted = quotedMessageByTab.get(key || activeTabKey);
     if (quoted) msg.quote_message_id = quoted.id;
 
-    sendWS(msg);
+    var requestId = sendWS(msg);
+    registerPendingSend(requestId, key || activeTabKey, msg);
     tab.inputEl.value = '';
     clearQuoteReply(key || activeTabKey);
     if (tab.type === 'user') sendTyping(tab.targetId, 0, false);
@@ -1769,6 +1772,53 @@ async function syncAfterOnline() {
 onWSOpen = function() {
     syncAfterOnline();
 };
+
+onWSAck = function(payload) {
+    var requestId = payload && payload.request_id;
+    if (requestId) pendingSends.delete(requestId);
+};
+
+onWSError = function(payload) {
+    payload = payload || {};
+    var requestId = payload.request_id || '';
+    var pending = requestId ? pendingSends.get(requestId) : null;
+    if (requestId) pendingSends.delete(requestId);
+
+    var message = payload.message || '发送失败';
+    if (pending) {
+        renderSendFailure(pending.key, pending.message, message);
+        return;
+    }
+    renderSendFailure(activeTabKey, null, message);
+};
+
+function registerPendingSend(requestId, key, msg) {
+    if (!requestId || !key || !msg) return;
+    pendingSends.set(requestId, {
+        key: key,
+        message: Object.assign({}, msg),
+        createdAt: Date.now()
+    });
+}
+
+function renderSendFailure(key, msg, reason) {
+    var tab = key ? chatTabs.get(key) : null;
+    var text = msg ? getPreviewText(msg) : '';
+    var html = '<div class="send-failure">' +
+        '<strong>发送失败</strong>' +
+        '<span>' + escapeHtml(reason || '请求处理失败') + '</span>' +
+        (text ? '<em>' + escapeHtml(text) + '</em>' : '') +
+    '</div>';
+    if (tab && tab.messagesEl) {
+        tab.messagesEl.innerHTML += html;
+        tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
+        if (msg && msg.type === 'text' && tab.inputEl && !tab.inputEl.value) {
+            tab.inputEl.value = msg.content || '';
+        }
+        return;
+    }
+    alert('发送失败: ' + (reason || '请求处理失败'));
+}
 
 // ========================================
 // 初始化
