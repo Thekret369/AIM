@@ -72,15 +72,25 @@ func (c *Client) readPump() {
 
 		// 先尝试解析外层 WSMessage 包装
 		var wrapper WSMessage
-		if err := json.Unmarshal(data, &wrapper); err != nil || wrapper.Type == "" {
+		if err := json.Unmarshal(data, &wrapper); err != nil {
+			log.Printf("[ws] 消息解析失败: %v", err)
+			c.SendError("", "bad_message", "消息格式错误")
+			continue
+		}
+		if wrapper.Type == "" {
 			// 兼容旧协议：无 type 字段则视为 chat 消息
 			var msg model.Message
 			if err := json.Unmarshal(data, &msg); err != nil {
 				log.Printf("[ws] 消息解析失败: %v", err)
+				c.SendError("", "bad_message", "消息格式错误")
 				continue
 			}
-			msg.FromUserID = c.UserID
-			c.Hub.OnMessage <- &msg
+			c.dispatchChat("", &msg)
+			continue
+		}
+		if !IsClientMessageTypeAllowed(wrapper.Type) {
+			log.Printf("[ws] 未允许的消息类型: %s", wrapper.Type)
+			c.SendError(wrapper.RequestID, "unsupported_type", "不支持的消息类型")
 			continue
 		}
 
@@ -89,15 +99,16 @@ func (c *Client) readPump() {
 			var msg model.Message
 			if err := json.Unmarshal(wrapper.Payload, &msg); err != nil {
 				log.Printf("[ws] chat 解析失败: %v", err)
+				c.SendError(wrapper.RequestID, "bad_payload", "聊天消息格式错误")
 				continue
 			}
-			msg.FromUserID = c.UserID
-			c.Hub.OnMessage <- &msg
+			c.dispatchChat(wrapper.RequestID, &msg)
 
 		case WSMTyping:
 			var p TypingPayload
 			if err := json.Unmarshal(wrapper.Payload, &p); err != nil {
 				log.Printf("[ws] typing 解析失败: %v", err)
+				c.SendError(wrapper.RequestID, "bad_payload", "输入状态格式错误")
 				continue
 			}
 			p.FromUserID = c.UserID
@@ -107,15 +118,26 @@ func (c *Client) readPump() {
 			var p ReadReceiptPayload
 			if err := json.Unmarshal(wrapper.Payload, &p); err != nil {
 				log.Printf("[ws] read_receipt 解析失败: %v", err)
+				c.SendError(wrapper.RequestID, "bad_payload", "已读回执格式错误")
 				continue
 			}
 			p.FromUserID = c.UserID
 			c.Hub.OnReadReceipt <- &p
-
-		default:
-			log.Printf("[ws] 未知消息类型: %s", wrapper.Type)
 		}
 	}
+}
+
+func (c *Client) dispatchChat(requestID string, msg *model.Message) {
+	msg.FromUserID = c.UserID
+	if c.Hub.UseClientMessages {
+		c.Hub.OnClientMessage <- &ClientMessage{
+			Client:    c,
+			RequestID: requestID,
+			Message:   msg,
+		}
+		return
+	}
+	c.Hub.OnMessage <- msg
 }
 
 // writePump 将发送缓冲区的消息写入 WebSocket
@@ -144,5 +166,42 @@ func (c *Client) writePump() {
 				return
 			}
 		}
+	}
+}
+
+func (c *Client) SendAck(requestID string, messageID uint) {
+	c.sendWrapped(WSMAck, requestID, &AckPayload{
+		RequestID: requestID,
+		MessageID: messageID,
+		Status:    "ok",
+	})
+}
+
+func (c *Client) SendError(requestID, code, message string) {
+	if code == "" {
+		code = "error"
+	}
+	if message == "" {
+		message = "请求处理失败"
+	}
+	c.sendWrapped(WSMError, requestID, &ErrorPayload{
+		RequestID: requestID,
+		Code:      code,
+		Message:   message,
+	})
+}
+
+func (c *Client) sendWrapped(messageType WSMessageType, requestID string, payload interface{}) {
+	data, err := json.Marshal(WSMessage{
+		Type:      messageType,
+		RequestID: requestID,
+		Payload:   mustMarshal(payload),
+	})
+	if err != nil {
+		return
+	}
+	select {
+	case c.send <- data:
+	default:
 	}
 }

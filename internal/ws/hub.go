@@ -15,21 +15,26 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 
-	OnMessage     chan *model.Message
-	OnTyping      chan *TypingPayload
-	OnReadReceipt chan *ReadReceiptPayload
-	OnUserOnline  chan uint
+	OnMessage       chan *model.Message
+	OnClientMessage chan *ClientMessage
+	OnTyping        chan *TypingPayload
+	OnReadReceipt   chan *ReadReceiptPayload
+	OnUserOnline    chan uint
+
+	// UseClientMessages 开启后，chat 消息会携带来源 Client 进入 OnClientMessage。
+	UseClientMessages bool
 }
 
 func NewHub() *Hub {
 	h := &Hub{
-		clients:       make(map[uint]map[*Client]bool),
-		register:      make(chan *Client),
-		unregister:    make(chan *Client),
-		OnMessage:     make(chan *model.Message, 256),
-		OnTyping:      make(chan *TypingPayload, 64),
-		OnReadReceipt: make(chan *ReadReceiptPayload, 64),
-		OnUserOnline:  make(chan uint, 64),
+		clients:         make(map[uint]map[*Client]bool),
+		register:        make(chan *Client),
+		unregister:      make(chan *Client),
+		OnMessage:       make(chan *model.Message, 256),
+		OnClientMessage: make(chan *ClientMessage, 256),
+		OnTyping:        make(chan *TypingPayload, 64),
+		OnReadReceipt:   make(chan *ReadReceiptPayload, 64),
+		OnUserOnline:    make(chan uint, 64),
 	}
 	go h.run()
 	return h
