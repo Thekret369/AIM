@@ -82,6 +82,32 @@ func (s *AuthService) Login(username, password string) (string, *model.User, err
 	return token, &user, nil
 }
 
+// RevokeToken 吊销当前 token 所属用户的所有已签发 token。
+func (s *AuthService) RevokeToken(tokenStr string) error {
+	claims, err := middleware.ParseToken(tokenStr, s.JWTSecret)
+	if err != nil || claims == nil {
+		return errors.New("令牌无效或已过期")
+	}
+	return s.RevokeUserTokens(claims.UserID)
+}
+
+// RevokeUserTokens 通过递增 TokenVersion 让旧 token 全部失效。
+func (s *AuthService) RevokeUserTokens(userID uint) error {
+	if userID == 0 {
+		return errors.New("无效用户")
+	}
+	result := model.DB.Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("token_version", gorm.Expr("token_version + 1"))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("用户不存在")
+	}
+	return nil
+}
+
 // generateToken 签发 JWT，写入 token_version 用于顶出旧登录
 func (s *AuthService) generateToken(user *model.User) (string, error) {
 	claims := &middleware.Claims{
@@ -147,5 +173,9 @@ func (s *AuthService) ChangePassword(userID uint, oldPassword, newPassword strin
 	if err != nil {
 		return err
 	}
-	return model.DB.Model(&user).Update("password", string(hash)).Error
+	// 密码变更和 TokenVersion 递增必须同事务提交，避免旧 token 继续可用。
+	return model.DB.Model(&user).Updates(map[string]interface{}{
+		"password":      string(hash),
+		"token_version": gorm.Expr("token_version + 1"),
+	}).Error
 }
