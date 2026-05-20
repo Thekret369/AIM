@@ -50,14 +50,21 @@ func (s *ChatService) validateClientMessage(msg *model.Message) error {
 	if msg == nil {
 		return errors.New("消息不能为空")
 	}
+	if !isClientMessageTypeAllowed(msg.Type) {
+		return errors.New("不支持的消息类型")
+	}
 	hasUser := msg.ToUserID != nil && *msg.ToUserID > 0
 	hasGroup := msg.GroupID != nil && *msg.GroupID > 0
 	if hasUser == hasGroup {
 		return errors.New("消息目标无效")
 	}
+	if hasUser {
+		if err := s.validateDirectMessagePermission(msg.FromUserID, *msg.ToUserID); err != nil {
+			return err
+		}
+	}
 	if hasGroup {
-		var member model.GroupMember
-		err := model.DB.Where("group_id = ? AND user_id = ?", *msg.GroupID, msg.FromUserID).First(&member).Error
+		member, err := s.getGroupMember(*msg.GroupID, msg.FromUserID)
 		if err != nil {
 			return errors.New("不是群成员")
 		}
@@ -69,6 +76,76 @@ func (s *ChatService) validateClientMessage(msg *model.Message) error {
 		return err
 	}
 	return nil
+}
+
+func isClientMessageTypeAllowed(messageType model.MessageType) bool {
+	switch messageType {
+	case model.MsgText, model.MsgImage, model.MsgFile, model.MsgAudio:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *ChatService) validateDirectMessagePermission(fromUserID, toUserID uint) error {
+	if fromUserID == 0 || toUserID == 0 {
+		return errors.New("消息目标无效")
+	}
+	if fromUserID == toUserID {
+		return nil
+	}
+
+	var target model.User
+	if err := model.DB.First(&target, toUserID).Error; err != nil {
+		return errors.New("接收用户不存在")
+	}
+	if target.IsAI {
+		return s.validateAIDirectMessagePermission(fromUserID, target.ID)
+	}
+
+	var blockedCount int64
+	if err := model.DB.Model(&model.FriendRelation{}).
+		Where("((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)) AND status = ?",
+			fromUserID, toUserID, toUserID, fromUserID, "blocked").
+		Count(&blockedCount).Error; err != nil {
+		return err
+	}
+	if blockedCount > 0 {
+		return errors.New("已被拉黑，不能发送消息")
+	}
+
+	var friendCount int64
+	if err := model.DB.Model(&model.FriendRelation{}).
+		Where("user_id = ? AND friend_id = ? AND status = ?", fromUserID, toUserID, "accepted").
+		Count(&friendCount).Error; err != nil {
+		return err
+	}
+	if friendCount == 0 {
+		return errors.New("不是好友，不能发送消息")
+	}
+	return nil
+}
+
+func (s *ChatService) validateAIDirectMessagePermission(fromUserID, botUserID uint) error {
+	var bot model.AIBot
+	err := model.DB.Where("user_id = ? AND status <> ?", botUserID, model.AIBotStatusDeleted).
+		First(&bot).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if bot.Status != model.AIBotStatusEnabled {
+		return errors.New("AI 助手未启用")
+	}
+	if bot.IsSystem {
+		return nil
+	}
+	if bot.OwnerID != nil && *bot.OwnerID == fromUserID {
+		return nil
+	}
+	return errors.New("无权向该 AI 助手发送消息")
 }
 
 func (s *ChatService) validateQuoteMessage(msg *model.Message) error {

@@ -220,6 +220,7 @@ func TestNormalUserMessageDoesNotTriggerAI(t *testing.T) {
 	chatSvc, _ := setupChatSecurityTest(t)
 	alice := createSecurityUser(t, "normal_trigger_alice")
 	bob := createSecurityUser(t, "normal_trigger_bob")
+	createAcceptedFriendPair(t, alice.ID, bob.ID)
 
 	fake := &fakeAIClient{reply: "should not call", calls: make(chan ai.ChatRequest, 1)}
 	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{Timeout: time.Second})
@@ -563,8 +564,8 @@ func TestOtherUserCannotDirectTriggerOwnedAIBot(t *testing.T) {
 		FromUserID: other.ID,
 		ToUserID:   &toBot,
 		Content:    "use other api",
-	}); err != nil {
-		t.Fatalf("send other ai message: %v", err)
+	}); err == nil {
+		t.Fatal("expected other user direct message to private ai to be rejected")
 	}
 	assertNoAIRequest(t, fake.calls)
 }
