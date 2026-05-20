@@ -38,6 +38,7 @@ func main() {
 
 	// 初始化 Hub
 	hub := ws.NewHub()
+	hub.UseClientMessages = true
 
 	// 初始化所有 Service
 	authSvc := &service.AuthService{
@@ -76,7 +77,26 @@ func main() {
 		}
 	}
 
-	// 启动消息消费协程：从 Hub.OnMessage 读取，经 ChatService 持久化并路由
+	// 启动消息消费协程：从 Hub.OnClientMessage 读取，经 ChatService 持久化并向来源连接回 ack/error。
+	go func() {
+		for event := range hub.OnClientMessage {
+			if event == nil || event.Message == nil {
+				continue
+			}
+			if err := chatSvc.SendFromClient(event.Message); err != nil {
+				log.Printf("[msg] 消息发送失败: uid=%d, err=%v", event.Message.FromUserID, err)
+				if event.Client != nil {
+					event.Client.SendError(event.RequestID, "send_failed", err.Error())
+				}
+				continue
+			}
+			if event.Client != nil {
+				event.Client.SendAck(event.RequestID, event.Message.ID)
+			}
+		}
+	}()
+
+	// 兼容旧的内部投递通道。
 	go func() {
 		for msg := range hub.OnMessage {
 			if err := chatSvc.SendFromClient(msg); err != nil {
