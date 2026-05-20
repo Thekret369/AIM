@@ -23,37 +23,67 @@
     <div class="page-header ai-page-head">
         <div>
             <h1>AI助手</h1>
-            <p>助手配置</p>
+            <p>蓝妹配置、知识库与 token 用量</p>
         </div>
         <div class="page-actions">
-            <button class="btn btn-primary" onclick="openCreateModal()">创建AI助手</button>
+            <button class="btn" onclick="openKnowledgeBaseModal()">新建知识库</button>
+            <button class="btn btn-primary" onclick="openCreateModal()">创建蓝妹分身</button>
         </div>
     </div>
     <div id="aiNotice" class="ai-notice hidden"></div>
-    <div id="aiBotList" class="contact-list ai-bot-list">加载中...</div>
+
+    <div class="ai-dashboard-grid">
+        <section class="ai-main-section">
+            <h2>蓝妹实例</h2>
+            <div id="aiBotList" class="contact-list ai-bot-list">加载中...</div>
+        </section>
+        <aside class="ai-side-section">
+            <div class="ai-panel">
+                <div class="ai-panel-head">
+                    <h2>知识库</h2>
+                    <button class="btn btn-sm" onclick="openKnowledgeBaseModal()">新增</button>
+                </div>
+                <div id="knowledgeBaseList" class="ai-kb-list">加载中...</div>
+            </div>
+            <div class="ai-panel">
+                <div class="ai-panel-head">
+                    <h2>最近用量</h2>
+                    <button class="btn btn-sm" onclick="loadTokenUsages()">刷新</button>
+                </div>
+                <div id="tokenUsageList" class="ai-usage-list">加载中...</div>
+            </div>
+        </aside>
+    </div>
 </div>
 
 <div id="botModal" class="modal">
     <div class="modal-content ai-modal-content">
-        <h3 id="botModalTitle">创建AI助手</h3>
+        <h3 id="botModalTitle">创建蓝妹分身</h3>
         <div class="ai-form-grid">
             <div class="form-group">
                 <label for="botName">名称</label>
-                <input type="text" id="botName" placeholder="我的AI助手">
+                <input type="text" id="botName" placeholder="我的蓝妹">
             </div>
             <div class="form-group">
                 <label for="botAvatar">头像</label>
                 <input type="text" id="botAvatar" placeholder="头像地址或短文本">
             </div>
             <div class="form-group">
-                <label for="botBaseURL">API地址</label>
-                <input type="text" id="botBaseURL" placeholder="https://api.openai.com/v1">
+                <label for="botAPISource">API来源</label>
+                <select id="botAPISource" onchange="syncAPISourceFields()">
+                    <option value="system">系统内置 API</option>
+                    <option value="third_party">第三方 API</option>
+                </select>
             </div>
             <div class="form-group">
                 <label for="botModel">模型</label>
-                <input type="text" id="botModel" placeholder="gpt-4o-mini">
+                <input type="text" id="botModel" placeholder="留空使用系统默认模型">
             </div>
-            <div class="form-group">
+            <div class="form-group provider-field">
+                <label for="botBaseURL">API地址</label>
+                <input type="text" id="botBaseURL" placeholder="https://api.openai.com/v1">
+            </div>
+            <div class="form-group provider-field">
                 <label for="botAPIKey">API Key</label>
                 <input type="password" id="botAPIKey" autocomplete="new-password">
             </div>
@@ -81,10 +111,52 @@
             <label for="botSystemPrompt">系统提示词</label>
             <textarea id="botSystemPrompt" rows="5"></textarea>
         </div>
+        <div class="form-group">
+            <label>绑定知识库</label>
+            <div id="botKnowledgeChoices" class="ai-kb-choice-list"></div>
+        </div>
         <div class="error" id="botFormError"></div>
         <div class="ai-modal-actions">
             <button class="btn btn-primary" onclick="saveBot()">保存</button>
             <button class="btn" onclick="closeBotModal()">取消</button>
+        </div>
+    </div>
+</div>
+
+<div id="knowledgeBaseModal" class="modal">
+    <div class="modal-content ai-modal-content ai-compact-modal">
+        <h3>新建知识库</h3>
+        <div class="form-group">
+            <label for="kbName">名称</label>
+            <input type="text" id="kbName" placeholder="业务资料">
+        </div>
+        <div class="form-group">
+            <label for="kbDescription">描述</label>
+            <textarea id="kbDescription" rows="3"></textarea>
+        </div>
+        <div class="error" id="kbFormError"></div>
+        <div class="ai-modal-actions">
+            <button class="btn btn-primary" onclick="saveKnowledgeBase()">保存</button>
+            <button class="btn" onclick="closeKnowledgeBaseModal()">取消</button>
+        </div>
+    </div>
+</div>
+
+<div id="knowledgeDocumentModal" class="modal">
+    <div class="modal-content ai-modal-content ai-compact-modal">
+        <h3 id="docModalTitle">新增知识文档</h3>
+        <div class="form-group">
+            <label for="docTitle">标题</label>
+            <input type="text" id="docTitle" placeholder="资料标题">
+        </div>
+        <div class="form-group">
+            <label for="docContent">内容</label>
+            <textarea id="docContent" rows="8"></textarea>
+        </div>
+        <div class="error" id="docFormError"></div>
+        <div class="ai-modal-actions">
+            <button class="btn btn-primary" onclick="saveKnowledgeDocument()">保存</button>
+            <button class="btn" onclick="closeKnowledgeDocumentModal()">取消</button>
         </div>
     </div>
 </div>
@@ -94,12 +166,20 @@
 checkAuth();
 
 let bots = [];
+let knowledgeBases = [];
+let tokenUsages = [];
 let editingBot = null;
+let currentDocBaseID = 0;
 
 function loadNavUser() {
     var el = document.getElementById('navUser');
     el.textContent = getUserNickname();
     el.href = '/profile';
+}
+
+async function loadAll() {
+    await loadKnowledgeBases();
+    await Promise.all([loadBots(), loadTokenUsages()]);
 }
 
 async function loadBots() {
@@ -130,8 +210,9 @@ function renderBots() {
         var name = bot.nickname || bot.username || ('AI用户' + bot.user_id);
         var statusClass = bot.status === 'enabled' ? 'enabled' : 'disabled';
         var statusText = bot.status === 'enabled' ? '启用' : '停用';
-        var ownerText = bot.is_system ? '内置' : '自建';
-        var keyText = bot.api_key_set ? '已保存' : '未设置';
+        var sourceText = apiSourceText(bot);
+        var costText = usageText(bot);
+        var kbText = bot.is_system ? '后台知识库' : ('知识库 ' + (bot.knowledge_base_count || 0));
         var chatDisabled = bot.status === 'enabled' ? '' : ' disabled';
         var editBtn = bot.can_edit ? '<button class="btn btn-primary btn-sm" onclick="openEditModal(' + bot.id + ')">编辑</button>' : '';
         var deleteBtn = bot.can_edit ? '<button class="btn btn-danger btn-sm" onclick="deleteBot(' + bot.id + ')">删除</button>' : '';
@@ -139,10 +220,11 @@ function renderBots() {
             '<div class="avatar">' + escapeHtml(bot.is_system ? 'AI' : name.charAt(0)) + '</div>' +
             '<div class="info">' +
                 '<div class="name">' + escapeHtml(name) + '</div>' +
-                '<div class="remark">模型: ' + escapeHtml(bot.model || '-') + ' | API Key: ' + keyText + '</div>' +
-                '<div class="remark">API: ' + escapeHtml(bot.base_url || '-') + '</div>' +
+                '<div class="remark">模型: ' + escapeHtml(bot.model || '-') + ' | ' + escapeHtml(sourceText) + '</div>' +
+                '<div class="remark">' + escapeHtml(costText) + '</div>' +
                 '<div class="ai-pill-row">' +
-                    '<span class="ai-pill">' + ownerText + '</span>' +
+                    '<span class="ai-pill">' + (bot.is_system ? '内置免费' : '自定义') + '</span>' +
+                    '<span class="ai-pill">' + escapeHtml(kbText) + '</span>' +
                     '<span class="ai-pill ' + statusClass + '">' + statusText + '</span>' +
                 '</div>' +
             '</div>' +
@@ -154,20 +236,36 @@ function renderBots() {
     }).join('');
 }
 
+function apiSourceText(bot) {
+    if (bot.api_source === 'system') return bot.is_system ? '系统 API' : '系统 API 计费';
+    return '第三方 API';
+}
+
+function usageText(bot) {
+    var usage = bot.usage || {};
+    var tokens = usage.total_tokens || 0;
+    if (bot.api_source === 'system' && !bot.is_system) {
+        return 'Token: ' + tokens + ' | 费用: ¥' + formatMoney(usage.total_cost_cny || 0);
+    }
+    return 'Token: ' + tokens + ' | 不计费';
+}
+
 function openCreateModal() {
     editingBot = null;
-    document.getElementById('botModalTitle').textContent = '创建AI助手';
+    document.getElementById('botModalTitle').textContent = '创建蓝妹分身';
     document.getElementById('botStatusGroup').classList.add('hidden');
     setFormValue({
         nickname: '',
         avatar: '',
+        api_source: 'system',
         base_url: '',
         model: '',
         system_prompt: '',
         context_limit: 12,
         temperature: 0.7,
         max_tokens: 1024,
-        status: 'enabled'
+        status: 'enabled',
+        knowledge_base_ids: []
     });
     document.getElementById('botAPIKey').placeholder = '';
     document.getElementById('botFormError').textContent = '';
@@ -178,10 +276,10 @@ function openEditModal(id) {
     var bot = bots.find(function(item) { return item.id === id; });
     if (!bot || !bot.can_edit) return;
     editingBot = bot;
-    document.getElementById('botModalTitle').textContent = '编辑AI助手';
+    document.getElementById('botModalTitle').textContent = '编辑蓝妹分身';
     document.getElementById('botStatusGroup').classList.remove('hidden');
     setFormValue(bot);
-    document.getElementById('botAPIKey').placeholder = '';
+    document.getElementById('botAPIKey').placeholder = bot.api_key_set ? '留空则不更新' : '';
     document.getElementById('botFormError').textContent = '';
     document.getElementById('botModal').classList.add('show');
 }
@@ -193,6 +291,7 @@ function closeBotModal() {
 function setFormValue(bot) {
     document.getElementById('botName').value = bot.nickname || '';
     document.getElementById('botAvatar').value = bot.avatar || '';
+    document.getElementById('botAPISource').value = bot.api_source || 'system';
     document.getElementById('botBaseURL').value = bot.base_url || '';
     document.getElementById('botModel').value = bot.model || '';
     document.getElementById('botAPIKey').value = '';
@@ -201,21 +300,53 @@ function setFormValue(bot) {
     document.getElementById('botTemperature').value = (bot.temperature !== undefined && bot.temperature !== null) ? bot.temperature : 0.7;
     document.getElementById('botMaxTokens').value = bot.max_tokens || 1024;
     document.getElementById('botStatus').value = bot.status || 'enabled';
+    renderKnowledgeChoices(bot.knowledge_base_ids || []);
+    syncAPISourceFields();
+}
+
+function syncAPISourceFields() {
+    var source = document.getElementById('botAPISource').value;
+    var providerFields = document.querySelectorAll('.provider-field');
+    providerFields.forEach(function(el) {
+        el.classList.toggle('hidden', source === 'system');
+    });
+    document.getElementById('botModel').placeholder = source === 'system' ? '留空使用系统默认模型' : 'gpt-4o-mini';
+}
+
+function renderKnowledgeChoices(selected) {
+    var box = document.getElementById('botKnowledgeChoices');
+    if (knowledgeBases.length === 0) {
+        box.innerHTML = '<div class="empty-state compact">暂无可绑定知识库</div>';
+        return;
+    }
+    var selectedMap = {};
+    selected.forEach(function(id) { selectedMap[id] = true; });
+    box.innerHTML = knowledgeBases.map(function(kb) {
+        return '<label class="ai-kb-choice">' +
+            '<input type="checkbox" value="' + kb.id + '"' + (selectedMap[kb.id] ? ' checked' : '') + '> ' +
+            '<span>' + escapeHtml(kb.name) + '</span>' +
+        '</label>';
+    }).join('');
 }
 
 function collectFormValue() {
     var temperature = parseFloat(document.getElementById('botTemperature').value);
     if (Number.isNaN(temperature)) temperature = 0.7;
 
+    var ids = Array.prototype.slice.call(document.querySelectorAll('#botKnowledgeChoices input:checked'))
+        .map(function(input) { return parseInt(input.value, 10); })
+        .filter(function(id) { return id > 0; });
     var body = {
         name: document.getElementById('botName').value.trim(),
         avatar: document.getElementById('botAvatar').value.trim(),
+        api_source: document.getElementById('botAPISource').value,
         base_url: document.getElementById('botBaseURL').value.trim(),
         model: document.getElementById('botModel').value.trim(),
         system_prompt: document.getElementById('botSystemPrompt').value.trim(),
         context_limit: parseInt(document.getElementById('botContextLimit').value, 10) || 12,
         temperature: temperature,
-        max_tokens: parseInt(document.getElementById('botMaxTokens').value, 10) || 1024
+        max_tokens: parseInt(document.getElementById('botMaxTokens').value, 10) || 1024,
+        knowledge_base_ids: ids
     };
     var apiKey = document.getElementById('botAPIKey').value.trim();
     if (apiKey) body.api_key = apiKey;
@@ -227,8 +358,12 @@ async function saveBot() {
     var err = document.getElementById('botFormError');
     err.textContent = '';
     var body = collectFormValue();
-    if (!body.name || !body.base_url || !body.model) {
-        err.textContent = '名称、API地址、模型不能为空';
+    if (!body.name) {
+        err.textContent = '名称不能为空';
+        return;
+    }
+    if (body.api_source === 'third_party' && (!body.base_url || !body.model)) {
+        err.textContent = '第三方 API 需要填写 API 地址和模型';
         return;
     }
 
@@ -240,13 +375,14 @@ async function saveBot() {
         }
         closeBotModal();
         await loadBots();
+        await loadTokenUsages();
     } catch (e) {
         err.textContent = e.message;
     }
 }
 
 async function deleteBot(id) {
-    if (!confirm('确认删除该AI助手？')) return;
+    if (!confirm('确认删除该蓝妹分身？')) return;
     try {
         await api('DELETE', '/ai/bots/' + id);
         await loadBots();
@@ -255,8 +391,169 @@ async function deleteBot(id) {
     }
 }
 
+async function loadKnowledgeBases() {
+    var list = document.getElementById('knowledgeBaseList');
+    list.innerHTML = '<div class="empty-state compact">加载中...</div>';
+    try {
+        var data = await api('GET', '/ai/knowledge-bases');
+        knowledgeBases = data.knowledge_bases || [];
+        renderKnowledgeBases();
+    } catch (e) {
+        knowledgeBases = [];
+        list.innerHTML = '<div class="empty-state compact">' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+function renderKnowledgeBases() {
+    var list = document.getElementById('knowledgeBaseList');
+    if (knowledgeBases.length === 0) {
+        list.innerHTML = '<div class="empty-state compact">暂无知识库</div>';
+        return;
+    }
+    list.innerHTML = knowledgeBases.map(function(kb) {
+        var docs = kb.documents || [];
+        var docHtml = docs.slice(0, 3).map(function(doc) {
+            return '<div class="ai-kb-doc">' +
+                '<span>' + escapeHtml(doc.title) + '</span>' +
+                '<button class="btn btn-sm btn-danger" onclick="deleteKnowledgeDocument(' + doc.id + ')">删除</button>' +
+            '</div>';
+        }).join('');
+        return '<div class="ai-kb-item">' +
+            '<div class="ai-kb-title">' + escapeHtml(kb.name) + '</div>' +
+            '<div class="remark">' + escapeHtml(kb.description || '无描述') + '</div>' +
+            '<div class="remark">文档 ' + (kb.document_count || 0) + '</div>' +
+            '<div class="ai-kb-doc-list">' + docHtml + '</div>' +
+            '<div class="ai-kb-actions">' +
+                '<button class="btn btn-sm" onclick="openKnowledgeDocumentModal(' + kb.id + ')">新增文档</button>' +
+                '<button class="btn btn-sm btn-danger" onclick="deleteKnowledgeBase(' + kb.id + ')">删除</button>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+}
+
+function openKnowledgeBaseModal() {
+    document.getElementById('kbName').value = '';
+    document.getElementById('kbDescription').value = '';
+    document.getElementById('kbFormError').textContent = '';
+    document.getElementById('knowledgeBaseModal').classList.add('show');
+}
+
+function closeKnowledgeBaseModal() {
+    document.getElementById('knowledgeBaseModal').classList.remove('show');
+}
+
+async function saveKnowledgeBase() {
+    var err = document.getElementById('kbFormError');
+    err.textContent = '';
+    var body = {
+        name: document.getElementById('kbName').value.trim(),
+        description: document.getElementById('kbDescription').value.trim()
+    };
+    if (!body.name) {
+        err.textContent = '知识库名称不能为空';
+        return;
+    }
+    try {
+        await api('POST', '/ai/knowledge-bases', body);
+        closeKnowledgeBaseModal();
+        await loadKnowledgeBases();
+        renderKnowledgeChoices(editingBot ? (editingBot.knowledge_base_ids || []) : []);
+    } catch (e) {
+        err.textContent = e.message;
+    }
+}
+
+async function deleteKnowledgeBase(id) {
+    if (!confirm('确认删除该知识库？')) return;
+    try {
+        await api('DELETE', '/ai/knowledge-bases/' + id);
+        await loadKnowledgeBases();
+        await loadBots();
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+function openKnowledgeDocumentModal(baseID) {
+    currentDocBaseID = baseID;
+    document.getElementById('docTitle').value = '';
+    document.getElementById('docContent').value = '';
+    document.getElementById('docFormError').textContent = '';
+    document.getElementById('knowledgeDocumentModal').classList.add('show');
+}
+
+function closeKnowledgeDocumentModal() {
+    document.getElementById('knowledgeDocumentModal').classList.remove('show');
+}
+
+async function saveKnowledgeDocument() {
+    var err = document.getElementById('docFormError');
+    err.textContent = '';
+    var body = {
+        title: document.getElementById('docTitle').value.trim(),
+        content: document.getElementById('docContent').value.trim()
+    };
+    if (!body.title || !body.content) {
+        err.textContent = '标题和内容不能为空';
+        return;
+    }
+    try {
+        await api('POST', '/ai/knowledge-bases/' + currentDocBaseID + '/documents', body);
+        closeKnowledgeDocumentModal();
+        await loadKnowledgeBases();
+    } catch (e) {
+        err.textContent = e.message;
+    }
+}
+
+async function deleteKnowledgeDocument(id) {
+    if (!confirm('确认删除该文档？')) return;
+    try {
+        await api('DELETE', '/ai/knowledge-documents/' + id);
+        await loadKnowledgeBases();
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function loadTokenUsages() {
+    var list = document.getElementById('tokenUsageList');
+    list.innerHTML = '<div class="empty-state compact">加载中...</div>';
+    try {
+        var data = await api('GET', '/ai/token-usages?page_size=8');
+        tokenUsages = data.usages || [];
+        renderTokenUsages();
+    } catch (e) {
+        tokenUsages = [];
+        list.innerHTML = '<div class="empty-state compact">' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+function renderTokenUsages() {
+    var list = document.getElementById('tokenUsageList');
+    if (tokenUsages.length === 0) {
+        list.innerHTML = '<div class="empty-state compact">暂无用量</div>';
+        return;
+    }
+    list.innerHTML = '<table class="ai-usage-table"><thead><tr>' +
+        '<th>来源</th><th>Token</th><th>费用</th>' +
+        '</tr></thead><tbody>' +
+        tokenUsages.map(function(row) {
+            return '<tr>' +
+                '<td>' + escapeHtml(row.api_source === 'system' ? '系统' : '第三方') + '</td>' +
+                '<td>' + (row.total_tokens || 0) + '</td>' +
+                '<td>' + (row.billable ? ('¥' + formatMoney(row.total_cost_cny || 0)) : '-') + '</td>' +
+            '</tr>';
+        }).join('') +
+        '</tbody></table>';
+}
+
 function chatWithBot(userID) {
     window.location.href = '/chat?peer=' + userID;
+}
+
+function formatMoney(value) {
+    return Number(value || 0).toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00');
 }
 
 function escapeHtml(s) {
@@ -267,7 +564,7 @@ function escapeHtml(s) {
 
 loadNavUser();
 loadAndApplySettings();
-loadBots();
+loadAll();
 </script>
 </body>
 </html>

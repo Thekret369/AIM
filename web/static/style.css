@@ -2617,6 +2617,143 @@ body.theme-dark .no-chat-placeholder {
 	gap: 10px 12px;
 }
 
+.ai-layout {
+	max-width: 1180px;
+}
+
+.ai-dashboard-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 340px;
+	gap: 18px;
+	align-items: start;
+}
+
+.ai-main-section h2,
+.ai-panel h2 {
+	margin: 0;
+	color: var(--text);
+	font-size: 16px;
+	font-weight: 800;
+}
+
+.ai-main-section > h2 {
+	margin-bottom: 10px;
+}
+
+.ai-side-section {
+	display: grid;
+	gap: 14px;
+}
+
+.ai-panel {
+	border: 1px solid var(--border-light);
+	border-radius: 8px;
+	background: var(--surface);
+	padding: 14px;
+}
+
+.ai-panel-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	margin-bottom: 10px;
+}
+
+.ai-kb-list,
+.ai-usage-list,
+.ai-kb-choice-list {
+	display: grid;
+	gap: 10px;
+}
+
+.ai-kb-item {
+	border: 1px solid var(--border-light);
+	border-radius: 8px;
+	padding: 10px;
+	background: var(--surface-hover);
+}
+
+.ai-kb-title {
+	color: var(--text);
+	font-weight: 800;
+}
+
+.ai-kb-doc-list {
+	display: grid;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.ai-kb-doc,
+.ai-kb-actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.ai-kb-doc span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-secondary);
+	font-size: 13px;
+}
+
+.ai-kb-actions {
+	justify-content: flex-start;
+	margin-top: 10px;
+	flex-wrap: wrap;
+}
+
+.ai-kb-choice {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 32px;
+	padding: 7px 9px;
+	border: 1px solid var(--border-light);
+	border-radius: 6px;
+	background: var(--surface-hover);
+	color: var(--text);
+	font-size: 14px;
+}
+
+.ai-kb-choice input {
+	width: auto !important;
+	margin: 0 !important;
+}
+
+.ai-usage-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.ai-usage-table th,
+.ai-usage-table td {
+	padding: 8px 6px;
+	border-bottom: 1px solid var(--border-light);
+	text-align: left;
+	color: var(--text-secondary);
+}
+
+.ai-usage-table th {
+	color: var(--text);
+	font-weight: 800;
+}
+
+.ai-compact-modal {
+	width: min(560px, calc(100vw - 32px));
+}
+
+.empty-state.compact {
+	padding: 10px;
+	font-size: 13px;
+}
+
 .contact-item .btn {
 	flex-shrink: 0;
 }
@@ -2644,6 +2781,10 @@ body.theme-dark .no-chat-placeholder {
 	.page-header {
 		align-items: stretch;
 		flex-direction: column;
+	}
+
+	.ai-dashboard-grid {
+		grid-template-columns: 1fr;
 	}
 
 	.page-actions {
