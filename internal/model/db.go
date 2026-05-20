@@ -31,6 +31,10 @@ func InitDB(dsn string) error {
 		&Announcement{},
 		&MessageRead{},
 		&AIBot{},
+		&AIKnowledgeBase{},
+		&AIKnowledgeDocument{},
+		&AIBotKnowledgeBase{},
+		&AITokenUsage{},
 	)
 	if err != nil {
 		return err
@@ -65,6 +69,11 @@ func EnsureIndexes() error {
 		"CREATE INDEX IF NOT EXISTS idx_friend_relations_user_friend ON friend_relations (user_id, friend_id)",
 		"CREATE INDEX IF NOT EXISTS idx_ai_bots_owner_status ON ai_bots (owner_id, status)",
 		"CREATE INDEX IF NOT EXISTS idx_ai_bots_system_status ON ai_bots (is_system, status)",
+		"CREATE INDEX IF NOT EXISTS idx_ai_knowledge_bases_owner_status ON ai_knowledge_bases (owner_id, status)",
+		"CREATE INDEX IF NOT EXISTS idx_ai_knowledge_bases_system_status ON ai_knowledge_bases (is_system, status)",
+		"CREATE INDEX IF NOT EXISTS idx_ai_knowledge_documents_kb_status ON ai_knowledge_documents (knowledge_base_id, status)",
+		"CREATE INDEX IF NOT EXISTS idx_ai_token_usages_user_created ON ai_token_usages (user_id, created_at)",
+		"CREATE INDEX IF NOT EXISTS idx_ai_token_usages_bot_created ON ai_token_usages (bot_id, created_at)",
 	}
 	for _, stmt := range statements {
 		if err := DB.Exec(stmt).Error; err != nil {
