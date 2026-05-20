@@ -12,10 +12,16 @@ import (
 	"AIM/internal/model"
 	"AIM/pkg/ai"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 const disabledAIPassword = "AI_USER_DISABLED_LOGIN"
+
+const (
+	aiInputPricePerMillionCNY  = 1.0
+	aiOutputPricePerMillionCNY = 3.0
+)
 
 // AIConfig 是 service 层使用的全局 AI 运行配置。
 type AIConfig struct {
@@ -33,51 +39,70 @@ type AIConfig struct {
 
 // AIBotInput 是创建用户自建 AI 时的输入。
 type AIBotInput struct {
-	Name         string
-	Avatar       string
-	BaseURL      string
-	APIKey       string
-	Model        string
-	SystemPrompt string
-	ContextLimit int
-	Temperature  float64
-	MaxTokens    int
+	Name             string
+	Avatar           string
+	APISource        string
+	BaseURL          string
+	APIKey           string
+	Model            string
+	SystemPrompt     string
+	ContextLimit     int
+	Temperature      float64
+	MaxTokens        int
+	KnowledgeBaseIDs []uint
+	PluginConfig     json.RawMessage
 }
 
 // AIBotUpdateInput 使用指针区分“未传字段”和“传空值”。
 type AIBotUpdateInput struct {
-	Name         *string
-	Avatar       *string
-	BaseURL      *string
-	APIKey       *string
-	Model        *string
-	SystemPrompt *string
-	ContextLimit *int
-	Temperature  *float64
-	MaxTokens    *int
-	Status       *string
+	Name             *string
+	Avatar           *string
+	APISource        *string
+	BaseURL          *string
+	APIKey           *string
+	Model            *string
+	SystemPrompt     *string
+	ContextLimit     *int
+	Temperature      *float64
+	MaxTokens        *int
+	Status           *string
+	KnowledgeBaseIDs *[]uint
+	PluginConfig     *json.RawMessage
+}
+
+type AIBotUsageSummary struct {
+	PromptTokens     int64   `json:"prompt_tokens"`
+	CompletionTokens int64   `json:"completion_tokens"`
+	TotalTokens      int64   `json:"total_tokens"`
+	BillableTokens   int64   `json:"billable_tokens"`
+	TotalCostCNY     float64 `json:"total_cost_cny"`
 }
 
 // AIBotInfo 是返回给前端的 AI 用户信息，不包含 API Key 明文。
 type AIBotInfo struct {
-	ID           uint      `json:"id"`
-	UserID       uint      `json:"user_id"`
-	OwnerID      *uint     `json:"owner_id,omitempty"`
-	Username     string    `json:"username"`
-	Nickname     string    `json:"nickname"`
-	Avatar       string    `json:"avatar"`
-	BaseURL      string    `json:"base_url"`
-	Model        string    `json:"model"`
-	SystemPrompt string    `json:"system_prompt"`
-	ContextLimit int       `json:"context_limit"`
-	Temperature  float64   `json:"temperature"`
-	MaxTokens    int       `json:"max_tokens"`
-	Status       string    `json:"status"`
-	IsSystem     bool      `json:"is_system"`
-	CanEdit      bool      `json:"can_edit"`
-	APIKeySet    bool      `json:"api_key_set"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                 uint              `json:"id"`
+	UserID             uint              `json:"user_id"`
+	OwnerID            *uint             `json:"owner_id,omitempty"`
+	Username           string            `json:"username"`
+	Nickname           string            `json:"nickname"`
+	Avatar             string            `json:"avatar"`
+	APISource          string            `json:"api_source"`
+	BaseURL            string            `json:"base_url"`
+	Model              string            `json:"model"`
+	SystemPrompt       string            `json:"system_prompt"`
+	ContextLimit       int               `json:"context_limit"`
+	Temperature        float64           `json:"temperature"`
+	MaxTokens          int               `json:"max_tokens"`
+	Status             string            `json:"status"`
+	IsSystem           bool              `json:"is_system"`
+	CanEdit            bool              `json:"can_edit"`
+	APIKeySet          bool              `json:"api_key_set"`
+	KnowledgeBaseIDs   []uint            `json:"knowledge_base_ids"`
+	KnowledgeBaseCount int               `json:"knowledge_base_count"`
+	PluginConfig       json.RawMessage   `json:"plugin_config,omitempty"`
+	Usage              AIBotUsageSummary `json:"usage"`
+	CreatedAt          time.Time         `json:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at"`
 }
 
 // AIService 负责识别 AI 用户、组装上下文并以 AI 用户身份写回消息。
@@ -94,6 +119,7 @@ type aiTrigger struct {
 type aiRuntime struct {
 	User               model.User
 	Bot                *model.AIBot
+	APISource          string
 	BaseURL            string
 	APIKey             string
 	Model              string
@@ -104,6 +130,13 @@ type aiRuntime struct {
 	OwnedByCurrentUser bool
 	SystemManaged      bool
 	HasDedicatedConfig bool
+}
+
+type aiCompletionResult struct {
+	Content        string
+	Usage          ai.Usage
+	Runtime        *aiRuntime
+	ProviderCalled bool
 }
 
 func NewAIService(client ai.Client, chat *ChatService, cfg AIConfig) *AIService {
@@ -180,19 +213,31 @@ func (s *AIService) ListUserBots(ownerID uint) ([]AIBotInfo, error) {
 
 	result := make([]AIBotInfo, 0, len(bots))
 	for _, bot := range bots {
-		result = append(result, toAIBotInfo(bot, ownerID))
+		knowledgeIDs, err := s.listBotKnowledgeBaseIDs(ownerID, bot)
+		if err != nil {
+			return nil, err
+		}
+		usage, err := s.loadBotUsageSummary(ownerID, bot.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, toAIBotInfo(bot, ownerID, knowledgeIDs, usage))
 	}
 	return result, nil
 }
 
 // CreateUserBot 创建归属于当前用户的 AI 虚拟用户。
 func (s *AIService) CreateUserBot(ownerID uint, input AIBotInput) (*AIBotInfo, error) {
-	if err := normalizeCreateAIBotInput(&input); err != nil {
+	if err := s.normalizeCreateAIBotInput(&input); err != nil {
+		return nil, err
+	}
+	pluginConfig, err := normalizePluginConfig(input.PluginConfig)
+	if err != nil {
 		return nil, err
 	}
 
 	var info *AIBotInfo
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		user := model.User{
 			Username:       fmt.Sprintf("ai_%d_%d", ownerID, time.Now().UnixNano()),
 			Password:       disabledAIPassword,
@@ -211,6 +256,7 @@ func (s *AIService) CreateUserBot(ownerID uint, input AIBotInput) (*AIBotInfo, e
 			UserID:       user.ID,
 			OwnerID:      &ownerID,
 			IsSystem:     false,
+			APISource:    input.APISource,
 			BaseURL:      input.BaseURL,
 			APIKey:       input.APIKey,
 			Model:        input.Model,
@@ -219,12 +265,16 @@ func (s *AIService) CreateUserBot(ownerID uint, input AIBotInput) (*AIBotInfo, e
 			Temperature:  input.Temperature,
 			MaxTokens:    input.MaxTokens,
 			Status:       model.AIBotStatusEnabled,
+			PluginConfig: pluginConfig,
 			User:         user,
 		}
 		if err := tx.Create(&bot).Error; err != nil {
 			return err
 		}
-		value := toAIBotInfo(bot, ownerID)
+		if err := s.replaceBotKnowledgeBasesTx(tx, ownerID, bot.ID, input.KnowledgeBaseIDs); err != nil {
+			return err
+		}
+		value := toAIBotInfo(bot, ownerID, input.KnowledgeBaseIDs, AIBotUsageSummary{})
 		info = &value
 		return nil
 	})
@@ -245,8 +295,16 @@ func (s *AIService) UpdateUserBot(ownerID, botID uint, input AIBotUpdateInput) (
 		}
 		return nil, err
 	}
-	if err := validateAIBotUpdate(input); err != nil {
+	if err := s.validateAIBotUpdate(bot, input); err != nil {
 		return nil, err
+	}
+	var pluginConfig datatypes.JSON
+	if input.PluginConfig != nil {
+		var err error
+		pluginConfig, err = normalizePluginConfig(*input.PluginConfig)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
@@ -259,6 +317,9 @@ func (s *AIService) UpdateUserBot(ownerID, botID uint, input AIBotUpdateInput) (
 		}
 		if input.Avatar != nil {
 			userUpdates["avatar"] = strings.TrimSpace(*input.Avatar)
+		}
+		if input.APISource != nil {
+			botUpdates["api_source"] = normalizeAIBotAPISource(strings.TrimSpace(*input.APISource), valueOrDefault(input.BaseURL, bot.BaseURL))
 		}
 		if input.BaseURL != nil {
 			baseURL := strings.TrimSpace(*input.BaseURL)
@@ -290,6 +351,9 @@ func (s *AIService) UpdateUserBot(ownerID, botID uint, input AIBotUpdateInput) (
 		if input.Status != nil {
 			botUpdates["status"] = strings.TrimSpace(*input.Status)
 		}
+		if input.PluginConfig != nil {
+			botUpdates["plugin_config"] = pluginConfig
+		}
 
 		if len(userUpdates) > 0 {
 			if err := tx.Model(&model.User{}).Where("id = ?", bot.UserID).Updates(userUpdates).Error; err != nil {
@@ -298,6 +362,11 @@ func (s *AIService) UpdateUserBot(ownerID, botID uint, input AIBotUpdateInput) (
 		}
 		if len(botUpdates) > 0 {
 			if err := tx.Model(&model.AIBot{}).Where("id = ?", bot.ID).Updates(botUpdates).Error; err != nil {
+				return err
+			}
+		}
+		if input.KnowledgeBaseIDs != nil {
+			if err := s.replaceBotKnowledgeBasesTx(tx, ownerID, bot.ID, *input.KnowledgeBaseIDs); err != nil {
 				return err
 			}
 		}
@@ -310,7 +379,15 @@ func (s *AIService) UpdateUserBot(ownerID, botID uint, input AIBotUpdateInput) (
 	if err := model.DB.Preload("User").First(&bot, bot.ID).Error; err != nil {
 		return nil, err
 	}
-	info := toAIBotInfo(bot, ownerID)
+	knowledgeIDs, err := s.listBotKnowledgeBaseIDs(ownerID, bot)
+	if err != nil {
+		return nil, err
+	}
+	usage, err := s.loadBotUsageSummary(ownerID, bot.ID)
+	if err != nil {
+		return nil, err
+	}
+	info := toAIBotInfo(bot, ownerID, knowledgeIDs, usage)
 	return &info, nil
 }
 
@@ -342,13 +419,23 @@ func (s *AIService) HandleMessage(msg *model.Message) {
 		return
 	}
 	for _, trigger := range triggers {
-		reply, err := s.generateReply(context.Background(), trigger.Bot, msg)
+		result, err := s.generateReply(context.Background(), trigger.Bot, msg)
+		reply := ""
 		if err != nil {
 			log.Printf("[ai] generate reply failed: bot=%d msg=%d err=%v", trigger.Bot.ID, msg.ID, err)
 			reply = "AI 暂时无法回复，请稍后再试。"
+		} else {
+			reply = result.Content
 		}
-		if err := s.sendReply(trigger.Bot, msg, reply); err != nil {
+		replyMsg, err := s.sendReply(trigger.Bot, msg, reply)
+		if err != nil {
 			log.Printf("[ai] send reply failed: bot=%d msg=%d err=%v", trigger.Bot.ID, msg.ID, err)
+			continue
+		}
+		if result != nil && result.ProviderCalled {
+			if err := s.recordTokenUsage(result.Runtime, msg, replyMsg, result.Usage); err != nil {
+				log.Printf("[ai] record token usage failed: bot=%d msg=%d err=%v", trigger.Bot.ID, msg.ID, err)
+			}
 		}
 	}
 }
@@ -378,6 +465,7 @@ func (s *AIService) ensureSystemBotConfig(userID uint) error {
 	updates := map[string]interface{}{
 		"is_system":     true,
 		"owner_id":      nil,
+		"api_source":    model.AIBotAPISourceSystem,
 		"base_url":      strings.TrimSpace(s.Config.BaseURL),
 		"model":         strings.TrimSpace(s.Config.DefaultModel),
 		"system_prompt": strings.TrimSpace(s.Config.SystemPrompt),
@@ -400,6 +488,7 @@ func (s *AIService) ensureSystemBotConfig(userID uint) error {
 	bot = model.AIBot{
 		UserID:       userID,
 		IsSystem:     true,
+		APISource:    model.AIBotAPISourceSystem,
 		BaseURL:      strings.TrimSpace(s.Config.BaseURL),
 		APIKey:       apiKey,
 		Model:        strings.TrimSpace(s.Config.DefaultModel),
@@ -517,21 +606,21 @@ func (s *AIService) isGroupMember(groupID, userID uint) bool {
 	return count > 0
 }
 
-func (s *AIService) generateReply(parent context.Context, bot model.User, source *model.Message) (string, error) {
+func (s *AIService) generateReply(parent context.Context, bot model.User, source *model.Message) (*aiCompletionResult, error) {
 	runtime, err := s.loadRuntime(bot)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if runtime.BaseURL == "" {
-		return "AI 尚未配置，请在后端补充 API 地址和模型后再使用。", nil
+		return &aiCompletionResult{Content: "AI 尚未配置，请在后端补充 API 地址和模型后再使用。", Runtime: runtime}, nil
 	}
 	if runtime.Model == "" {
-		return "AI 尚未配置，请在后端补充 API 地址和模型后再使用。", nil
+		return &aiCompletionResult{Content: "AI 尚未配置，请在后端补充 API 地址和模型后再使用。", Runtime: runtime}, nil
 	}
 
 	messages, err := s.buildPrompt(runtime, source)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(parent, s.Config.Timeout)
@@ -547,9 +636,14 @@ func (s *AIService) generateReply(parent context.Context, bot model.User, source
 		MaxTokens:   runtime.MaxTokens,
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return resp.Content, nil
+	return &aiCompletionResult{
+		Content:        resp.Content,
+		Usage:          resp.Usage,
+		Runtime:        runtime,
+		ProviderCalled: true,
+	}, nil
 }
 
 func (s *AIService) loadRuntime(bot model.User) (*aiRuntime, error) {
@@ -575,12 +669,22 @@ func (s *AIService) loadRuntimeByUser(user model.User) (*aiRuntime, error) {
 		if !bot.IsEnabled() {
 			return nil, errors.New("ai bot is disabled")
 		}
+		apiSource := bot.NormalizedAPISource()
+		baseURL := strings.TrimSpace(bot.BaseURL)
+		apiKey := strings.TrimSpace(bot.APIKey)
+		modelName := strings.TrimSpace(bot.Model)
+		if apiSource == model.AIBotAPISourceSystem {
+			baseURL = strings.TrimSpace(s.Config.BaseURL)
+			apiKey = strings.TrimSpace(s.Config.APIKey)
+			modelName = firstNonEmpty(bot.Model, s.Config.DefaultModel)
+		}
 		return &aiRuntime{
 			User:               user,
 			Bot:                &bot,
-			BaseURL:            strings.TrimSpace(bot.BaseURL),
-			APIKey:             strings.TrimSpace(bot.APIKey),
-			Model:              strings.TrimSpace(bot.Model),
+			APISource:          apiSource,
+			BaseURL:            baseURL,
+			APIKey:             apiKey,
+			Model:              modelName,
 			SystemPrompt:       firstNonEmpty(bot.SystemPrompt, s.Config.SystemPrompt),
 			ContextLimit:       defaultInt(bot.ContextLimit, s.Config.MaxContextMessages),
 			Temperature:        bot.Temperature,
@@ -595,6 +699,7 @@ func (s *AIService) loadRuntimeByUser(user model.User) (*aiRuntime, error) {
 
 	return &aiRuntime{
 		User:          user,
+		APISource:     model.AIBotAPISourceThirdParty,
 		BaseURL:       firstNonEmpty(user.AIEndpoint, s.Config.BaseURL),
 		APIKey:        s.Config.APIKey,
 		Model:         firstNonEmpty(user.AIModel, s.Config.DefaultModel),
@@ -613,6 +718,13 @@ func (s *AIService) buildPrompt(runtime *aiRuntime, source *model.Message) ([]ai
 	}
 	if source.IsToGroup() {
 		systemPrompt += "\n当前是群聊场景，请只回复本次 @ 你的用户，并避免主动读取无关隐私。"
+	}
+	knowledgeContext, err := s.loadKnowledgeContext(runtime)
+	if err != nil {
+		return nil, err
+	}
+	if knowledgeContext != "" {
+		systemPrompt += "\n\n以下是当前蓝妹可参考的知识库资料，仅用于回答相关问题：\n" + knowledgeContext
 	}
 
 	history, err := s.loadContextMessages(runtime.User.ID, source, runtime.ContextLimit)
@@ -666,7 +778,7 @@ func (s *AIService) loadContextMessages(botID uint, source *model.Message, limit
 	return messages, nil
 }
 
-func (s *AIService) sendReply(bot model.User, source *model.Message, content string) error {
+func (s *AIService) sendReply(bot model.User, source *model.Message, content string) (*model.Message, error) {
 	reply := &model.Message{
 		Type:       model.MsgText,
 		FromUserID: bot.ID,
@@ -680,12 +792,19 @@ func (s *AIService) sendReply(bot model.User, source *model.Message, content str
 		toUserID := source.FromUserID
 		reply.ToUserID = &toUserID
 	}
-	return s.Chat.Send(reply)
+	if err := s.Chat.Send(reply); err != nil {
+		return nil, err
+	}
+	return reply, nil
 }
 
-func normalizeCreateAIBotInput(input *AIBotInput) error {
+func (s *AIService) normalizeCreateAIBotInput(input *AIBotInput) error {
 	input.Name = strings.TrimSpace(input.Name)
 	input.Avatar = strings.TrimSpace(input.Avatar)
+	input.APISource = normalizeAIBotAPISource(input.APISource, input.BaseURL)
+	if !isValidAIBotAPISource(input.APISource) {
+		return errors.New("API 来源无效")
+	}
 	input.BaseURL = strings.TrimSpace(input.BaseURL)
 	input.APIKey = strings.TrimSpace(input.APIKey)
 	input.Model = strings.TrimSpace(input.Model)
@@ -693,11 +812,14 @@ func normalizeCreateAIBotInput(input *AIBotInput) error {
 	if input.Name == "" {
 		return errors.New("AI 名称不能为空")
 	}
-	if input.BaseURL == "" {
+	if input.APISource == model.AIBotAPISourceThirdParty && input.BaseURL == "" {
 		return errors.New("API 地址不能为空")
 	}
-	if input.Model == "" {
+	if input.APISource == model.AIBotAPISourceThirdParty && input.Model == "" {
 		return errors.New("模型名称不能为空")
+	}
+	if input.APISource == model.AIBotAPISourceSystem && input.Model == "" {
+		input.Model = strings.TrimSpace(s.Config.DefaultModel)
 	}
 	if input.ContextLimit <= 0 {
 		input.ContextLimit = 12
@@ -711,14 +833,36 @@ func normalizeCreateAIBotInput(input *AIBotInput) error {
 	return nil
 }
 
-func validateAIBotUpdate(input AIBotUpdateInput) error {
+func (s *AIService) validateAIBotUpdate(bot model.AIBot, input AIBotUpdateInput) error {
 	if input.Name != nil && strings.TrimSpace(*input.Name) == "" {
 		return errors.New("AI 名称不能为空")
 	}
-	if input.BaseURL != nil && strings.TrimSpace(*input.BaseURL) == "" {
+	apiSource := bot.NormalizedAPISource()
+	if input.APISource != nil {
+		normalized := normalizeAIBotAPISource(*input.APISource, valueOrDefault(input.BaseURL, bot.BaseURL))
+		if strings.TrimSpace(*input.APISource) != "" && !isValidAIBotAPISource(normalized) {
+			return errors.New("API 来源无效")
+		}
+		apiSource = normalized
+	}
+	baseURL := strings.TrimSpace(bot.BaseURL)
+	if input.BaseURL != nil {
+		baseURL = strings.TrimSpace(*input.BaseURL)
+	}
+	modelName := strings.TrimSpace(bot.Model)
+	if input.Model != nil {
+		modelName = strings.TrimSpace(*input.Model)
+	}
+	if apiSource == model.AIBotAPISourceThirdParty && baseURL == "" {
 		return errors.New("API 地址不能为空")
 	}
-	if input.Model != nil && strings.TrimSpace(*input.Model) == "" {
+	if apiSource == model.AIBotAPISourceThirdParty && modelName == "" {
+		return errors.New("模型名称不能为空")
+	}
+	if input.BaseURL != nil && strings.TrimSpace(*input.BaseURL) == "" && apiSource == model.AIBotAPISourceThirdParty {
+		return errors.New("API 地址不能为空")
+	}
+	if input.Model != nil && strings.TrimSpace(*input.Model) == "" && apiSource == model.AIBotAPISourceThirdParty {
 		return errors.New("模型名称不能为空")
 	}
 	if input.ContextLimit != nil && *input.ContextLimit <= 0 {
@@ -736,27 +880,32 @@ func validateAIBotUpdate(input AIBotUpdateInput) error {
 	return nil
 }
 
-func toAIBotInfo(bot model.AIBot, currentUserID uint) AIBotInfo {
+func toAIBotInfo(bot model.AIBot, currentUserID uint, knowledgeBaseIDs []uint, usage AIBotUsageSummary) AIBotInfo {
 	canEdit := !bot.IsSystem && bot.OwnerID != nil && *bot.OwnerID == currentUserID
 	return AIBotInfo{
-		ID:           bot.ID,
-		UserID:       bot.UserID,
-		OwnerID:      bot.OwnerID,
-		Username:     bot.User.Username,
-		Nickname:     bot.User.Nickname,
-		Avatar:       bot.User.Avatar,
-		BaseURL:      bot.BaseURL,
-		Model:        bot.Model,
-		SystemPrompt: bot.SystemPrompt,
-		ContextLimit: bot.ContextLimit,
-		Temperature:  bot.Temperature,
-		MaxTokens:    bot.MaxTokens,
-		Status:       bot.Status,
-		IsSystem:     bot.IsSystem,
-		CanEdit:      canEdit,
-		APIKeySet:    strings.TrimSpace(bot.APIKey) != "",
-		CreatedAt:    bot.CreatedAt,
-		UpdatedAt:    bot.UpdatedAt,
+		ID:                 bot.ID,
+		UserID:             bot.UserID,
+		OwnerID:            bot.OwnerID,
+		Username:           bot.User.Username,
+		Nickname:           bot.User.Nickname,
+		Avatar:             bot.User.Avatar,
+		APISource:          bot.NormalizedAPISource(),
+		BaseURL:            bot.BaseURL,
+		Model:              bot.Model,
+		SystemPrompt:       bot.SystemPrompt,
+		ContextLimit:       bot.ContextLimit,
+		Temperature:        bot.Temperature,
+		MaxTokens:          bot.MaxTokens,
+		Status:             bot.Status,
+		IsSystem:           bot.IsSystem,
+		CanEdit:            canEdit,
+		APIKeySet:          strings.TrimSpace(bot.APIKey) != "",
+		KnowledgeBaseIDs:   knowledgeBaseIDs,
+		KnowledgeBaseCount: len(knowledgeBaseIDs),
+		PluginConfig:       json.RawMessage(bot.PluginConfig),
+		Usage:              usage,
+		CreatedAt:          bot.CreatedAt,
+		UpdatedAt:          bot.UpdatedAt,
 	}
 }
 

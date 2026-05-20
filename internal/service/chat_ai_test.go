@@ -15,6 +15,7 @@ import (
 type fakeAIClient struct {
 	reply string
 	err   error
+	usage ai.Usage
 	calls chan ai.ChatRequest
 }
 
@@ -25,7 +26,7 @@ func (f *fakeAIClient) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatRe
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &ai.ChatResponse{Content: f.reply}, nil
+	return &ai.ChatResponse{Content: f.reply, Usage: f.usage}, nil
 }
 
 func TestAIUserDirectMessageCreatesReply(t *testing.T) {
@@ -341,7 +342,11 @@ func TestUserAIBotUsesOwnerAPIKey(t *testing.T) {
 		t.Fatalf("create owner bot: %v", err)
 	}
 
-	fake := &fakeAIClient{reply: "owner reply", calls: make(chan ai.ChatRequest, 1)}
+	fake := &fakeAIClient{
+		reply: "owner reply",
+		usage: ai.Usage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
+		calls: make(chan ai.ChatRequest, 1),
+	}
 	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{Timeout: time.Second})
 	toBot := bot.UserID
 	if err := chatSvc.SendFromClient(&model.Message{
@@ -356,6 +361,81 @@ func TestUserAIBotUsesOwnerAPIKey(t *testing.T) {
 	req := waitAIRequest(t, fake.calls)
 	if req.APIKey != "owner-key" || req.Model != "owner-model" || req.BaseURL != "http://owner-ai.local/v1" {
 		t.Fatalf("unexpected owner ai request: %+v", req)
+	}
+
+	usage := waitTokenUsage(t, owner.ID, bot.ID)
+	if usage.Billable || usage.TotalCostCNY != 0 || usage.TotalTokens != 150 {
+		t.Fatalf("third-party usage should only track tokens, got %+v", usage)
+	}
+}
+
+func TestSystemAPICustomBotBillsTokensAndUsesKnowledge(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_system_bill_owner")
+	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{
+		BaseURL:      "http://system-ai.local/v1",
+		APIKey:       "system-key",
+		DefaultModel: "system-model",
+		Timeout:      time.Second,
+	})
+
+	kb, err := aiSvc.CreateKnowledgeBase(owner.ID, AIKnowledgeBaseInput{Name: "蓝妹知识"})
+	if err != nil {
+		t.Fatalf("create knowledge base: %v", err)
+	}
+	if _, err := aiSvc.AddKnowledgeDocument(owner.ID, kb.ID, AIKnowledgeDocumentInput{
+		Title:   "称呼",
+		Content: "蓝妹应该称呼用户为掌柜的。",
+	}); err != nil {
+		t.Fatalf("add knowledge document: %v", err)
+	}
+
+	bot, err := aiSvc.CreateUserBot(owner.ID, AIBotInput{
+		Name:             "系统分身",
+		APISource:        model.AIBotAPISourceSystem,
+		SystemPrompt:     "你是蓝妹分身。",
+		KnowledgeBaseIDs: []uint{kb.ID},
+	})
+	if err != nil {
+		t.Fatalf("create system api bot: %v", err)
+	}
+
+	fake := &fakeAIClient{
+		reply: "system reply",
+		usage: ai.Usage{PromptTokens: 1000, CompletionTokens: 2000, TotalTokens: 3000},
+		calls: make(chan ai.ChatRequest, 1),
+	}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{
+		BaseURL:      "http://system-ai.local/v1",
+		APIKey:       "system-key",
+		DefaultModel: "system-model",
+		Timeout:      time.Second,
+	})
+
+	toBot := bot.UserID
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: owner.ID,
+		ToUserID:   &toBot,
+		Content:    "hello system bot",
+	}); err != nil {
+		t.Fatalf("send system bot message: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	if req.BaseURL != "http://system-ai.local/v1" || req.APIKey != "system-key" || req.Model != "system-model" {
+		t.Fatalf("unexpected system api request: %+v", req)
+	}
+	if !strings.Contains(req.Messages[0].Content, "蓝妹应该称呼用户为掌柜的") {
+		t.Fatalf("expected knowledge content in system prompt, got %q", req.Messages[0].Content)
+	}
+
+	usage := waitTokenUsage(t, owner.ID, bot.ID)
+	if !usage.Billable || usage.TotalTokens != 3000 {
+		t.Fatalf("expected billable system usage, got %+v", usage)
+	}
+	if usage.TotalCostCNY != 0.007 {
+		t.Fatalf("expected cost 0.007, got %.6f", usage.TotalCostCNY)
 	}
 }
 
@@ -442,6 +522,23 @@ func waitMessageContent(t *testing.T, fromUserID uint, content string) *model.Me
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for message from %d with content %q", fromUserID, content)
+	return nil
+}
+
+func waitTokenUsage(t *testing.T, userID, botID uint) *model.AITokenUsage {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var usage model.AITokenUsage
+		err := model.DB.Where("user_id = ? AND bot_id = ?", userID, botID).
+			First(&usage).Error
+		if err == nil {
+			return &usage
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for token usage user=%d bot=%d", userID, botID)
 	return nil
 }
 
