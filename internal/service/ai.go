@@ -779,10 +779,12 @@ func (s *AIService) loadContextMessages(botID uint, source *model.Message, limit
 }
 
 func (s *AIService) sendReply(bot model.User, source *model.Message, content string) (*model.Message, error) {
+	quoteID := source.ID
 	reply := &model.Message{
-		Type:       model.MsgText,
-		FromUserID: bot.ID,
-		Content:    strings.TrimSpace(content),
+		Type:           model.MsgText,
+		FromUserID:     bot.ID,
+		Content:        strings.TrimSpace(content),
+		QuoteMessageID: &quoteID, // 绑定原消息，保证并发回复能明确对应到各自问题。
 	}
 	if source.IsToGroup() && source.GroupID != nil {
 		groupID := *source.GroupID

@@ -19,6 +19,15 @@ type fakeAIClient struct {
 	calls chan ai.ChatRequest
 }
 
+type routedAIClient struct {
+	calls chan routedAICall
+}
+
+type routedAICall struct {
+	req   ai.ChatRequest
+	reply chan string
+}
+
 func (f *fakeAIClient) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatResponse, error) {
 	if f.calls != nil {
 		f.calls <- req
@@ -27,6 +36,22 @@ func (f *fakeAIClient) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatRe
 		return nil, f.err
 	}
 	return &ai.ChatResponse{Content: f.reply, Usage: f.usage}, nil
+}
+
+func (f *routedAIClient) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatResponse, error) {
+	call := routedAICall{req: req, reply: make(chan string, 1)}
+	select {
+	case f.calls <- call:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	select {
+	case reply := <-call.reply:
+		return &ai.ChatResponse{Content: reply}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func TestAIUserDirectMessageCreatesReply(t *testing.T) {
@@ -41,12 +66,13 @@ func TestAIUserDirectMessageCreatesReply(t *testing.T) {
 	})
 
 	toBot := bot.ID
-	if err := chatSvc.SendFromClient(&model.Message{
+	source := &model.Message{
 		Type:       model.MsgText,
 		FromUserID: user.ID,
 		ToUserID:   &toBot,
 		Content:    "hello ai",
-	}); err != nil {
+	}
+	if err := chatSvc.SendFromClient(source); err != nil {
 		t.Fatalf("send direct ai message: %v", err)
 	}
 
@@ -64,6 +90,77 @@ func TestAIUserDirectMessageCreatesReply(t *testing.T) {
 	reply := waitMessageContent(t, bot.ID, "AI reply")
 	if reply.ToUserID == nil || *reply.ToUserID != user.ID {
 		t.Fatalf("expected direct reply to user %d, got %+v", user.ID, reply.ToUserID)
+	}
+	if reply.QuoteMessageID == nil || *reply.QuoteMessageID != source.ID {
+		t.Fatalf("expected reply to quote source message %d, got %+v", source.ID, reply.QuoteMessageID)
+	}
+}
+
+func TestAIDirectConcurrentRepliesStayWithSourceMessage(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	userA := createSecurityUser(t, "ai_concurrent_user_a")
+	userB := createSecurityUser(t, "ai_concurrent_user_b")
+	bot := createAIUser(t, "ai_concurrent_bot")
+
+	fake := &routedAIClient{calls: make(chan routedAICall, 2)}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{
+		MaxContextMessages: 4,
+		Timeout:            time.Second,
+	})
+
+	toBot := bot.ID
+	msgA := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: userA.ID,
+		ToUserID:   &toBot,
+		Content:    "question from user a",
+	}
+	msgB := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: userB.ID,
+		ToUserID:   &toBot,
+		Content:    "question from user b",
+	}
+	if err := chatSvc.SendFromClient(msgA); err != nil {
+		t.Fatalf("send user a ai message: %v", err)
+	}
+	if err := chatSvc.SendFromClient(msgB); err != nil {
+		t.Fatalf("send user b ai message: %v", err)
+	}
+
+	calls := map[string]routedAICall{}
+	for len(calls) < 2 {
+		call := waitRoutedAICall(t, fake.calls)
+		calls[lastAIUserMessage(call.req)] = call
+	}
+
+	callA, ok := calls[msgA.Content]
+	if !ok {
+		t.Fatalf("missing ai request for %q", msgA.Content)
+	}
+	callB, ok := calls[msgB.Content]
+	if !ok {
+		t.Fatalf("missing ai request for %q", msgB.Content)
+	}
+
+	// 故意让后发消息先返回，验证投递目标仍按源消息隔离。
+	callB.reply <- "answer for user b"
+	callA.reply <- "answer for user a"
+
+	replyA := waitMessageContent(t, bot.ID, "answer for user a")
+	if replyA.ToUserID == nil || *replyA.ToUserID != userA.ID {
+		t.Fatalf("expected user a reply to user %d, got %+v", userA.ID, replyA.ToUserID)
+	}
+	if replyA.QuoteMessageID == nil || *replyA.QuoteMessageID != msgA.ID {
+		t.Fatalf("expected user a reply to quote message %d, got %+v", msgA.ID, replyA.QuoteMessageID)
+	}
+
+	replyB := waitMessageContent(t, bot.ID, "answer for user b")
+	if replyB.ToUserID == nil || *replyB.ToUserID != userB.ID {
+		t.Fatalf("expected user b reply to user %d, got %+v", userB.ID, replyB.ToUserID)
+	}
+	if replyB.QuoteMessageID == nil || *replyB.QuoteMessageID != msgB.ID {
+		t.Fatalf("expected user b reply to quote message %d, got %+v", msgB.ID, replyB.QuoteMessageID)
 	}
 }
 
@@ -91,13 +188,14 @@ func TestAIUserGroupMentionCreatesReply(t *testing.T) {
 	})
 
 	mentions := fmt.Sprintf("[%d]", bot.ID)
-	if err := chatSvc.SendFromClient(&model.Message{
+	source := &model.Message{
 		Type:       model.MsgText,
 		FromUserID: member.ID,
 		GroupID:    &group.ID,
 		Content:    "@ai_group_bot hello",
 		Mentions:   mentions,
-	}); err != nil {
+	}
+	if err := chatSvc.SendFromClient(source); err != nil {
 		t.Fatalf("send group ai mention: %v", err)
 	}
 
@@ -112,6 +210,9 @@ func TestAIUserGroupMentionCreatesReply(t *testing.T) {
 	}
 	if !strings.Contains(reply.Mentions, fmt.Sprint(member.ID)) {
 		t.Fatalf("expected reply mentions sender %d, got %q", member.ID, reply.Mentions)
+	}
+	if reply.QuoteMessageID == nil || *reply.QuoteMessageID != source.ID {
+		t.Fatalf("expected group reply to quote source message %d, got %+v", source.ID, reply.QuoteMessageID)
 	}
 }
 
@@ -496,6 +597,27 @@ func waitAIRequest(t *testing.T, calls <-chan ai.ChatRequest) ai.ChatRequest {
 		t.Fatal("timed out waiting for ai request")
 	}
 	return ai.ChatRequest{}
+}
+
+func waitRoutedAICall(t *testing.T, calls <-chan routedAICall) routedAICall {
+	t.Helper()
+
+	select {
+	case call := <-calls:
+		return call
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for routed ai request")
+	}
+	return routedAICall{}
+}
+
+func lastAIUserMessage(req ai.ChatRequest) string {
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		if req.Messages[i].Role == "user" {
+			return req.Messages[i].Content
+		}
+	}
+	return ""
 }
 
 func assertNoAIRequest(t *testing.T, calls <-chan ai.ChatRequest) {
