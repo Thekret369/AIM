@@ -160,6 +160,14 @@ func main() {
 		auth.POST("/ai/bots", aiH.CreateBot)
 		auth.PUT("/ai/bots/:id", aiH.UpdateBot)
 		auth.DELETE("/ai/bots/:id", aiH.DeleteBot)
+		auth.GET("/ai/token-usages", aiH.ListTokenUsages)
+		auth.GET("/ai/knowledge-bases", aiH.ListKnowledgeBases)
+		auth.POST("/ai/knowledge-bases", aiH.CreateKnowledgeBase)
+		auth.PUT("/ai/knowledge-bases/:id", aiH.UpdateKnowledgeBase)
+		auth.DELETE("/ai/knowledge-bases/:id", aiH.DeleteKnowledgeBase)
+		auth.POST("/ai/knowledge-bases/:id/documents", aiH.AddKnowledgeDocument)
+		auth.PUT("/ai/knowledge-documents/:id", aiH.UpdateKnowledgeDocument)
+		auth.DELETE("/ai/knowledge-documents/:id", aiH.DeleteKnowledgeDocument)
 
 		// 联系人分组
 		auth.POST("/contact-groups", contactH.Create)
