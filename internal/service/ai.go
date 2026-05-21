@@ -93,6 +93,8 @@ type AIBotInfo struct {
 	ContextLimit       int               `json:"context_limit"`
 	Temperature        float64           `json:"temperature"`
 	MaxTokens          int               `json:"max_tokens"`
+	Ready              bool              `json:"ready"`
+	UnavailableReason  string            `json:"unavailable_reason,omitempty"`
 	Status             string            `json:"status"`
 	IsSystem           bool              `json:"is_system"`
 	CanEdit            bool              `json:"can_edit"`
@@ -915,6 +917,7 @@ func (s *AIService) validateAIBotUpdate(bot model.AIBot, input AIBotUpdateInput)
 
 func toAIBotInfo(bot model.AIBot, currentUserID uint, knowledgeBaseIDs []uint, usage AIBotUsageSummary) AIBotInfo {
 	canEdit := !bot.IsSystem && bot.OwnerID != nil && *bot.OwnerID == currentUserID
+	ready, reason := aiBotReadyState(bot)
 	return AIBotInfo{
 		ID:                 bot.ID,
 		UserID:             bot.UserID,
@@ -929,6 +932,8 @@ func toAIBotInfo(bot model.AIBot, currentUserID uint, knowledgeBaseIDs []uint, u
 		ContextLimit:       bot.ContextLimit,
 		Temperature:        bot.Temperature,
 		MaxTokens:          bot.MaxTokens,
+		Ready:              ready,
+		UnavailableReason:  reason,
 		Status:             bot.Status,
 		IsSystem:           bot.IsSystem,
 		CanEdit:            canEdit,
@@ -940,6 +945,22 @@ func toAIBotInfo(bot model.AIBot, currentUserID uint, knowledgeBaseIDs []uint, u
 		CreatedAt:          bot.CreatedAt,
 		UpdatedAt:          bot.UpdatedAt,
 	}
+}
+
+func aiBotReadyState(bot model.AIBot) (bool, string) {
+	if bot.Status == model.AIBotStatusDeleted {
+		return false, "AI 助手已删除"
+	}
+	if bot.Status != model.AIBotStatusEnabled {
+		return false, "AI 助手已停用"
+	}
+	if strings.TrimSpace(bot.BaseURL) == "" {
+		return false, "API 地址未配置"
+	}
+	if strings.TrimSpace(bot.Model) == "" {
+		return false, "模型未配置"
+	}
+	return true, ""
 }
 
 func parseMentionIDs(raw string) []uint {
