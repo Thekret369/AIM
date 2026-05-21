@@ -323,6 +323,46 @@ func TestAIProviderFailureSendsFallbackMessage(t *testing.T) {
 	waitMessageContent(t, bot.ID, "AI 暂时无法回复，请稍后再试。")
 }
 
+func TestAIContextExcludesRecalledMessages(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	user := createSecurityUser(t, "ai_recall_context_user")
+	bot := createAIUser(t, "ai_recall_context_bot")
+
+	toBot := bot.ID
+	history := []*model.Message{
+		{Type: model.MsgText, FromUserID: user.ID, ToUserID: &toBot, Content: "visible-context"},
+		{Type: model.MsgText, FromUserID: user.ID, ToUserID: &toBot, Content: "recalled-secret", IsRecalled: true},
+	}
+	for _, msg := range history {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("seed ai recall context: %v", err)
+		}
+	}
+
+	fake := &fakeAIClient{reply: "recall-safe reply", calls: make(chan ai.ChatRequest, 1)}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{
+		MaxContextMessages: 8,
+		Timeout:            time.Second,
+	})
+
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: user.ID,
+		ToUserID:   &toBot,
+		Content:    "current recall-safe question",
+	}); err != nil {
+		t.Fatalf("send ai recall context message: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	if !promptContains(req, "visible-context") {
+		t.Fatalf("expected visible context in prompt, got %+v", req.Messages)
+	}
+	if promptContains(req, "recalled-secret") {
+		t.Fatalf("recalled message leaked into prompt: %+v", req.Messages)
+	}
+}
+
 func TestAIUserCannotLogin(t *testing.T) {
 	setupChatSecurityTest(t)
 	createAIUser(t, "ai_login_bot")
@@ -628,6 +668,34 @@ func TestOtherUserCannotDirectTriggerOwnedAIBot(t *testing.T) {
 		t.Fatal("expected other user direct message to private ai to be rejected")
 	}
 	assertNoAIRequest(t, fake.calls)
+}
+
+func TestDeletedAIBotRejectsDirectMessage(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_deleted_owner")
+	botUser := createAIUser(t, "ai_deleted_bot")
+	ownerID := owner.ID
+	if err := model.DB.Create(&model.AIBot{
+		UserID:    botUser.ID,
+		OwnerID:   &ownerID,
+		BaseURL:   "http://deleted-ai.local/v1",
+		Model:     "deleted-model",
+		Status:    model.AIBotStatusDeleted,
+		APISource: model.AIBotAPISourceThirdParty,
+	}).Error; err != nil {
+		t.Fatalf("create deleted ai bot config: %v", err)
+	}
+
+	toBot := botUser.ID
+	err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: owner.ID,
+		ToUserID:   &toBot,
+		Content:    "message to deleted bot",
+	})
+	if err == nil || !strings.Contains(err.Error(), "已删除") {
+		t.Fatalf("expected deleted bot send rejection, got %v", err)
+	}
 }
 
 func createAIUser(t *testing.T, username string) *model.User {

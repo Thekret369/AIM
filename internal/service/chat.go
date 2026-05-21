@@ -131,13 +131,16 @@ func (s *ChatService) validateDirectMessagePermission(fromUserID, toUserID uint)
 
 func (s *ChatService) validateAIDirectMessagePermission(fromUserID, botUserID uint) error {
 	var bot model.AIBot
-	err := model.DB.Where("user_id = ? AND status <> ?", botUserID, model.AIBotStatusDeleted).
+	err := model.DB.Where("user_id = ?", botUserID).
 		First(&bot).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+	if bot.Status == model.AIBotStatusDeleted {
+		return errors.New("AI 助手不存在或已删除")
 	}
 	if bot.Status != model.AIBotStatusEnabled {
 		return errors.New("AI 助手未启用")
