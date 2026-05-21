@@ -3,9 +3,12 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"AIM/internal/model"
+
+	"gorm.io/gorm"
 )
 
 // MemberInfo 群成员信息（含用户资料）
@@ -34,24 +37,36 @@ type GroupService struct{}
 
 // CreateGroup 创建群组，创建者默认为群主
 func (s *GroupService) CreateGroup(name, description string, ownerID uint) (*model.Group, error) {
-	group := &model.Group{
-		Name:        name,
-		Description: description,
-		OwnerID:     ownerID,
+	name = strings.TrimSpace(name)
+	description = strings.TrimSpace(description)
+	if name == "" {
+		return nil, errors.New("群名称不能为空")
 	}
-	if err := model.DB.Create(group).Error; err != nil {
-		return nil, err
-	}
-
-	member := &model.GroupMember{
-		GroupID: group.ID,
-		UserID:  ownerID,
-		Role:    model.RoleOwner,
-	}
-	if err := model.DB.Create(member).Error; err != nil {
-		return nil, err
+	var owner model.User
+	if err := model.DB.Select("id").First(&owner, ownerID).Error; err != nil {
+		return nil, errors.New("群主用户不存在")
 	}
 
+	var group *model.Group
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		group = &model.Group{
+			Name:        name,
+			Description: description,
+			OwnerID:     ownerID,
+		}
+		if err := tx.Create(group).Error; err != nil {
+			return err
+		}
+
+		member := &model.GroupMember{
+			GroupID: group.ID,
+			UserID:  ownerID,
+			Role:    model.RoleOwner,
+		}
+		return tx.Create(member).Error
+	}); err != nil {
+		return nil, err
+	}
 	return group, nil
 }
 
@@ -61,11 +76,17 @@ func (s *GroupService) JoinGroup(groupID, userID uint) error {
 	if err := model.DB.First(&group, groupID).Error; err != nil {
 		return errors.New("群组不存在")
 	}
+	var user model.User
+	if err := model.DB.Select("id").First(&user, userID).Error; err != nil {
+		return errors.New("用户不存在")
+	}
 
 	var count int64
-	model.DB.Model(&model.GroupMember{}).
+	if err := model.DB.Model(&model.GroupMember{}).
 		Where("group_id = ? AND user_id = ?", groupID, userID).
-		Count(&count)
+		Count(&count).Error; err != nil {
+		return err
+	}
 	if count > 0 {
 		return errors.New("已是群成员")
 	}
@@ -75,7 +96,13 @@ func (s *GroupService) JoinGroup(groupID, userID uint) error {
 		UserID:  userID,
 		Role:    model.RoleMember,
 	}
-	return model.DB.Create(member).Error
+	if err := model.DB.Create(member).Error; err != nil {
+		if isUniqueConstraintError(err) {
+			return errors.New("已是群成员")
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *GroupService) canAddAIToGroup(operatorID, targetID uint) error {
@@ -133,33 +160,42 @@ func (s *GroupService) KickMember(groupID, operatorID, targetID uint) error {
 
 // TransferOwner 转让群主
 func (s *GroupService) TransferOwner(groupID, ownerID, newOwnerID uint) error {
-	var group model.Group
-	if err := model.DB.First(&group, groupID).Error; err != nil {
-		return errors.New("群组不存在")
+	if ownerID == newOwnerID {
+		return errors.New("新群主已是群主")
 	}
-	if group.OwnerID != ownerID {
-		return errors.New("仅群主可转让")
-	}
-	newOwner, err := s.getMember(groupID, newOwnerID)
-	if err != nil {
-		return errors.New("新群主不是群成员")
-	}
-	group.OwnerID = newOwnerID
-	if err := model.DB.Save(&group).Error; err != nil {
-		return err
-	}
-	newOwner.Role = model.RoleOwner
-	model.DB.Save(&newOwner)
-	oldOwner, _ := s.getMember(groupID, ownerID)
-	if oldOwner.ID != 0 {
-		oldOwner.Role = model.RoleAdmin
-		model.DB.Save(&oldOwner)
-	}
-	return nil
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var group model.Group
+		if err := tx.First(&group, groupID).Error; err != nil {
+			return errors.New("群组不存在")
+		}
+		if group.OwnerID != ownerID {
+			return errors.New("仅群主可转让")
+		}
+		if _, err := s.getMemberDB(tx, groupID, newOwnerID); err != nil {
+			return errors.New("新群主不是群成员")
+		}
+		if _, err := s.getMemberDB(tx, groupID, ownerID); err != nil {
+			return errors.New("当前群主不是群成员")
+		}
+		if err := tx.Model(&group).Update("owner_id", newOwnerID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.GroupMember{}).
+			Where("group_id = ? AND user_id = ?", groupID, newOwnerID).
+			Update("role", model.RoleOwner).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.GroupMember{}).
+			Where("group_id = ? AND user_id = ?", groupID, ownerID).
+			Update("role", model.RoleAdmin).Error
+	})
 }
 
 // MuteMember 禁言成员
 func (s *GroupService) MuteMember(groupID, operatorID, targetID uint, durationMinutes int) error {
+	if durationMinutes <= 0 {
+		return errors.New("禁言时长必须大于 0")
+	}
 	opMember, err := s.getMember(groupID, operatorID)
 	if err != nil {
 		return err
@@ -193,7 +229,9 @@ func (s *GroupService) GetGroupMembers(groupID uint) ([]MemberInfo, error) {
 		userIDs[i] = m.UserID
 	}
 	var users []model.User
-	model.DB.Where("id IN ?", userIDs).Find(&users)
+	if err := model.DB.Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+		return nil, err
+	}
 	userMap := make(map[uint]model.User)
 	for _, u := range users {
 		userMap[u.ID] = u
@@ -219,21 +257,29 @@ func (s *GroupService) GetGroupMembers(groupID uint) ([]MemberInfo, error) {
 // GetUserGroups 获取用户所在的群组列表
 func (s *GroupService) GetUserGroups(userID uint) ([]model.Group, error) {
 	var groupIDs []uint
-	model.DB.Model(&model.GroupMember{}).
+	if err := model.DB.Model(&model.GroupMember{}).
 		Where("user_id = ?", userID).
-		Pluck("group_id", &groupIDs)
+		Pluck("group_id", &groupIDs).Error; err != nil {
+		return nil, err
+	}
 
 	var groups []model.Group
 	if len(groupIDs) > 0 {
-		model.DB.Where("id IN ?", groupIDs).Find(&groups)
+		if err := model.DB.Where("id IN ?", groupIDs).Find(&groups).Error; err != nil {
+			return nil, err
+		}
 	}
 	return groups, nil
 }
 
 // getMember 获取群成员信息
 func (s *GroupService) getMember(groupID, userID uint) (*model.GroupMember, error) {
+	return s.getMemberDB(model.DB, groupID, userID)
+}
+
+func (s *GroupService) getMemberDB(db *gorm.DB, groupID, userID uint) (*model.GroupMember, error) {
 	var member model.GroupMember
-	if err := model.DB.Where("group_id = ? AND user_id = ?", groupID, userID).
+	if err := db.Where("group_id = ? AND user_id = ?", groupID, userID).
 		First(&member).Error; err != nil {
 		return nil, errors.New("不是群成员")
 	}
@@ -324,9 +370,11 @@ func (s *GroupService) AddMember(groupID, operatorID, targetID uint) error {
 		}
 	}
 	var count int64
-	model.DB.Model(&model.GroupMember{}).
+	if err := model.DB.Model(&model.GroupMember{}).
 		Where("group_id = ? AND user_id = ?", groupID, targetID).
-		Count(&count)
+		Count(&count).Error; err != nil {
+		return err
+	}
 	if count > 0 {
 		return errors.New("该用户已是群成员")
 	}
@@ -335,7 +383,13 @@ func (s *GroupService) AddMember(groupID, operatorID, targetID uint) error {
 		UserID:  targetID,
 		Role:    model.RoleMember,
 	}
-	return model.DB.Create(member).Error
+	if err := model.DB.Create(member).Error; err != nil {
+		if isUniqueConstraintError(err) {
+			return errors.New("该用户已是群成员")
+		}
+		return err
+	}
+	return nil
 }
 
 // UnmuteMember 解除禁言
@@ -369,6 +423,10 @@ func (s *GroupService) ToggleDND(groupID, userID uint) (bool, error) {
 
 // CreateAnnouncement 发布群公告（新增一条记录，保留历史）
 func (s *GroupService) CreateAnnouncement(groupID, editorID uint, content string) (*model.Announcement, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, errors.New("公告内容不能为空")
+	}
 	// 检查编辑者是否群成员（群主或管理员）
 	opMember, err := s.getMember(groupID, editorID)
 	if err != nil {
@@ -378,19 +436,21 @@ func (s *GroupService) CreateAnnouncement(groupID, editorID uint, content string
 		return nil, errors.New("仅群主或管理员可发布公告")
 	}
 
-	ann := &model.Announcement{
-		GroupID:  groupID,
-		Content:  content,
-		EditorID: editorID,
-	}
-	if err := model.DB.Create(ann).Error; err != nil {
+	var ann *model.Announcement
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		ann = &model.Announcement{
+			GroupID:  groupID,
+			Content:  content,
+			EditorID: editorID,
+		}
+		if err := tx.Create(ann).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.Group{}).Where("id = ?", groupID).
+			Update("announce", content).Error
+	}); err != nil {
 		return nil, err
 	}
-
-	// 同步更新 Group.Announce 为最新公告
-	model.DB.Model(&model.Group{}).Where("id = ?", groupID).
-		Update("announce", content)
-
 	return ann, nil
 }
 
