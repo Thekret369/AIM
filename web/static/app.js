@@ -114,7 +114,7 @@ function connectWS() {
             switch (type) {
             case 'chat':
                 var msg = raw.payload ? payload : raw;
-                if (msg.from_user_id !== getUserId()) {
+                if (msg.from_user_id !== getUserId() && !msg.is_recalled) {
                     if (!window.__suppressSound || !window.__suppressSound(msg)) {
                         playMessageSound();
                     }
