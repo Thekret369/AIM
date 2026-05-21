@@ -229,6 +229,7 @@ func main() {
 
 		// 消息历史
 		auth.GET("/search/messages", chatH.SearchMessages)
+		auth.POST("/messages/:id/recall", chatH.RecallMessage)
 		auth.GET("/history", chatH.GetHistory)
 		auth.GET("/history/group/:id", chatH.GetGroupHistory)
 		auth.GET("/history/broadcast", chatH.GetBroadcastHistory)
