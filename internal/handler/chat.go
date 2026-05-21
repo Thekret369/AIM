@@ -121,6 +121,34 @@ func (h *ChatHandler) GetBroadcastHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"messages": msgs, "total": total})
 }
 
+// RecallMessage 撤回 2 分钟内由当前用户发送的消息。
+func (h *ChatHandler) RecallMessage(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	messageID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || messageID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的消息 ID"})
+		return
+	}
+
+	msg, err := h.Svc.RecallMessage(userID, uint(messageID))
+	if err != nil {
+		c.JSON(recallMessageStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": msg})
+}
+
+func recallMessageStatus(err error) int {
+	switch {
+	case errors.Is(err, service.ErrMessageNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, service.ErrMessageRecallForbidden):
+		return http.StatusForbidden
+	default:
+		return http.StatusBadRequest
+	}
+}
+
 // SearchMessages 搜索当前用户可访问范围内的消息
 func (h *ChatHandler) SearchMessages(c *gin.Context) {
 	userID := c.GetUint("user_id")
