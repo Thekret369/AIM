@@ -409,7 +409,10 @@ func (s *AIService) HandleMessage(msg *model.Message) {
 	if s == nil || s.Client == nil || s.Chat == nil || msg == nil {
 		return
 	}
-	if msg.Type != model.MsgText || strings.TrimSpace(msg.Content) == "" {
+	if msg.IsRecalled || msg.Type != model.MsgText || strings.TrimSpace(msg.Content) == "" {
+		return
+	}
+	if msg.ID > 0 && s.messageIsRecalled(msg.ID) {
 		return
 	}
 
@@ -539,6 +542,14 @@ func (s *AIService) canTriggerDirect(botUserID, senderID uint) bool {
 		return true
 	}
 	return runtime.Bot.OwnerID != nil && *runtime.Bot.OwnerID == senderID
+}
+
+func (s *AIService) messageIsRecalled(messageID uint) bool {
+	var msg model.Message
+	if err := model.DB.Select("is_recalled").First(&msg, messageID).Error; err != nil {
+		return false
+	}
+	return msg.IsRecalled
 }
 
 func (s *AIService) resolveGroupTriggers(msg *model.Message) ([]aiTrigger, error) {
@@ -768,6 +779,7 @@ func (s *AIService) loadDirectContextMessages(botID, peerID, beforeOrEqualID uin
 
 	err := model.DB.Preload("FromUser").
 		Where("id <= ? AND group_id IS NULL AND to_user_id IS NOT NULL", beforeOrEqualID).
+		Where("is_recalled = ?", false).
 		Where(
 			"(from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
 			peerID, botID, botID, peerID,
@@ -787,6 +799,7 @@ func (s *AIService) loadGroupContextMessages(groupID, beforeOrEqualID uint, limi
 
 	if err := model.DB.Preload("FromUser").
 		Where("id <= ? AND group_id = ?", beforeOrEqualID, groupID).
+		Where("is_recalled = ?", false).
 		Order("id DESC").
 		Limit(limit).
 		Find(&messages).Error; err != nil {
