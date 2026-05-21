@@ -27,7 +27,8 @@
         </div>
         <div class="page-actions">
             <button class="btn" onclick="openKnowledgeBaseModal()">新建知识库</button>
-            <button class="btn btn-primary" onclick="openCreateModal()">创建蓝妹分身</button>
+            <button class="btn btn-primary" onclick="openCreateModal('system')">创建蓝妹分身</button>
+            <button class="btn" onclick="openCreateModal('third_party')">创建自定义Bot</button>
         </div>
     </div>
     <div id="aiNotice" class="ai-notice hidden"></div>
@@ -68,7 +69,7 @@
                 <label for="botAvatar">头像</label>
                 <input type="text" id="botAvatar" placeholder="头像地址或短文本">
             </div>
-            <div class="form-group">
+            <div class="form-group" id="botAPISourceGroup">
                 <label for="botAPISource">API来源</label>
                 <select id="botAPISource" onchange="syncAPISourceFields()">
                     <option value="system">系统内置 API</option>
@@ -267,14 +268,18 @@ function usageText(bot) {
     return 'Token: ' + tokens + ' | 不计费';
 }
 
-function openCreateModal() {
+function openCreateModal(apiSource) {
     editingBot = null;
-    document.getElementById('botModalTitle').textContent = '创建蓝妹分身';
+    var source = apiSource || 'system';
+    var title = source === 'system' ? '创建蓝妹分身' : '创建自定义Bot';
+    document.getElementById('botModalTitle').textContent = title;
     document.getElementById('botStatusGroup').classList.add('hidden');
+    // 创建时隐藏 API 来源选择，由入口按钮决定
+    document.getElementById('botAPISourceGroup').classList.add('hidden');
     setFormValue({
         nickname: '',
         avatar: '',
-        api_source: 'system',
+        api_source: source,
         base_url: '',
         model: '',
         system_prompt: '',
@@ -295,6 +300,7 @@ function openEditModal(id) {
     editingBot = bot;
     document.getElementById('botModalTitle').textContent = '编辑蓝妹分身';
     document.getElementById('botStatusGroup').classList.remove('hidden');
+    document.getElementById('botAPISourceGroup').classList.remove('hidden');
     setFormValue(bot);
     document.getElementById('botAPIKey').placeholder = bot.api_key_set ? '留空则不更新' : '';
     document.getElementById('botFormError').textContent = '';
