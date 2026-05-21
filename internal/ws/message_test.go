@@ -10,7 +10,7 @@ func TestIsClientMessageTypeAllowed(t *testing.T) {
 		}
 	}
 
-	blocked := []WSMessageType{WSMStatus, WSMAck, WSMError, "admin"}
+	blocked := []WSMessageType{WSMAIStream, WSMStatus, WSMAck, WSMError, "admin"}
 	for _, messageType := range blocked {
 		if IsClientMessageTypeAllowed(messageType) {
 			t.Fatalf("expected %s to be blocked", messageType)

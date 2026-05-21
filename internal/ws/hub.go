@@ -88,9 +88,13 @@ func (h *Hub) Unregister(client *Client) {
 }
 
 func wrapChat(msg *model.Message) json.RawMessage {
+	return wrapPayload(WSMChat, msg)
+}
+
+func wrapPayload(messageType WSMessageType, payload interface{}) json.RawMessage {
 	w := WSMessage{
-		Type:    WSMChat,
-		Payload: mustMarshal(msg),
+		Type:    messageType,
+		Payload: mustMarshal(payload),
 	}
 	return mustMarshal(w)
 }
@@ -171,6 +175,22 @@ func (h *Hub) SendToUsers(userIDs []uint, msg *model.Message) {
 		return
 	}
 	sendToClients(clients, wrapChat(msg))
+}
+
+func (h *Hub) SendAIStreamToUser(userID uint, payload *AIStreamPayload) {
+	clients := h.snapshotUserClients(userID)
+	if len(clients) == 0 {
+		return
+	}
+	sendToClients(clients, wrapPayload(WSMAIStream, payload))
+}
+
+func (h *Hub) SendAIStreamToUsers(userIDs []uint, payload *AIStreamPayload) {
+	clients := h.snapshotUsersClients(userIDs, 0)
+	if len(clients) == 0 {
+		return
+	}
+	sendToClients(clients, wrapPayload(WSMAIStream, payload))
 }
 
 func (h *Hub) Broadcast(msg *model.Message) {
