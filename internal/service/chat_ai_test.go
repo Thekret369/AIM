@@ -23,6 +23,14 @@ type routedAIClient struct {
 	calls chan routedAICall
 }
 
+type streamingAIClient struct {
+	chunks         []string
+	usage          ai.Usage
+	err            error
+	calls          chan ai.ChatRequest
+	nonStreamCalls chan ai.ChatRequest
+}
+
 type routedAICall struct {
 	req   ai.ChatRequest
 	reply chan string
@@ -52,6 +60,36 @@ func (f *routedAIClient) Chat(ctx context.Context, req ai.ChatRequest) (*ai.Chat
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+func (f *streamingAIClient) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatResponse, error) {
+	if f.nonStreamCalls != nil {
+		f.nonStreamCalls <- req
+	}
+	return nil, errors.New("non-stream chat should not be called")
+}
+
+func (f *streamingAIClient) ChatStream(ctx context.Context, req ai.ChatRequest, onChunk ai.StreamHandler) (*ai.ChatResponse, error) {
+	if f.calls != nil {
+		select {
+		case f.calls <- req:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	var content strings.Builder
+	for _, chunk := range f.chunks {
+		content.WriteString(chunk)
+		if onChunk != nil {
+			if err := onChunk(ai.ChatStreamChunk{Delta: chunk}); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ai.ChatResponse{Content: content.String(), Usage: f.usage}, nil
 }
 
 func TestAIUserDirectMessageCreatesReply(t *testing.T) {
@@ -93,6 +131,56 @@ func TestAIUserDirectMessageCreatesReply(t *testing.T) {
 	}
 	if reply.QuoteMessageID == nil || *reply.QuoteMessageID != source.ID {
 		t.Fatalf("expected reply to quote source message %d, got %+v", source.ID, reply.QuoteMessageID)
+	}
+}
+
+func TestAIUserDirectMessageStreamsReply(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_stream_owner")
+	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{Timeout: time.Second})
+	bot, err := aiSvc.CreateUserBot(owner.ID, AIBotInput{
+		Name:    "Stream AI",
+		BaseURL: "http://stream-ai.local/v1",
+		APIKey:  "stream-key",
+		Model:   "stream-model",
+	})
+	if err != nil {
+		t.Fatalf("create stream bot: %v", err)
+	}
+
+	fake := &streamingAIClient{
+		chunks:         []string{"stream", " reply"},
+		usage:          ai.Usage{PromptTokens: 4, CompletionTokens: 3, TotalTokens: 7},
+		calls:          make(chan ai.ChatRequest, 1),
+		nonStreamCalls: make(chan ai.ChatRequest, 1),
+	}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{Timeout: time.Second})
+
+	toBot := bot.UserID
+	source := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: owner.ID,
+		ToUserID:   &toBot,
+		Content:    "hello stream ai",
+	}
+	if err := chatSvc.SendFromClient(source); err != nil {
+		t.Fatalf("send stream ai message: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	if req.APIKey != "stream-key" || req.Model != "stream-model" || req.BaseURL != "http://stream-ai.local/v1" {
+		t.Fatalf("unexpected stream request: %+v", req)
+	}
+	assertNoAIRequest(t, fake.nonStreamCalls)
+
+	reply := waitMessageContent(t, bot.UserID, "stream reply")
+	if reply.QuoteMessageID == nil || *reply.QuoteMessageID != source.ID {
+		t.Fatalf("expected stream reply to quote source message %d, got %+v", source.ID, reply.QuoteMessageID)
+	}
+
+	usage := waitTokenUsage(t, owner.ID, bot.ID)
+	if usage.TotalTokens != 7 || usage.PromptTokens != 4 || usage.CompletionTokens != 3 {
+		t.Fatalf("unexpected stream usage: %+v", usage)
 	}
 }
 
