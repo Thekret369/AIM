@@ -1,11 +1,10 @@
 package service
 
 import (
-	"errors"
-
 	"AIM/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ensureSystemAIFriendsForUserTx 将当前普通用户与所有启用的内置 AI 建立双向好友关系。
@@ -66,21 +65,18 @@ func ensureAcceptedFriendPairTx(tx *gorm.DB, userID, friendID uint) error {
 }
 
 func ensureAcceptedFriendRelationTx(tx *gorm.DB, userID, friendID uint) error {
-	var rel model.FriendRelation
-	err := tx.Where("user_id = ? AND friend_id = ?", userID, friendID).First(&rel).Error
-	if err == nil {
-		if rel.Status != "accepted" {
-			return tx.Model(&rel).Update("status", "accepted").Error
-		}
-		return nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
-	}
-
-	return tx.Create(&model.FriendRelation{
+	rel := model.FriendRelation{
 		UserID:   userID,
 		FriendID: friendID,
 		Status:   "accepted",
-	}).Error
+	}
+	return tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "user_id"},
+			{Name: "friend_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"status": "accepted",
+		}),
+	}).Create(&rel).Error
 }
