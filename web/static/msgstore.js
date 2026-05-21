@@ -33,15 +33,37 @@ var msgStore = (function() {
         });
     }
 
+    // 按当前登录用户隔离本地缓存 key
+    function currentUserScope() {
+        try {
+            if (typeof getUserId === 'function') {
+                var userId = getUserId();
+                if (userId > 0) return 'uid:' + userId;
+            }
+            if (typeof getUsername === 'function') {
+                var username = getUsername();
+                if (username) return 'username:' + encodeURIComponent(username);
+            }
+        } catch (e) {}
+        return 'uid:0';
+    }
+
+    function scopeConvKey(convKey) {
+        return currentUserScope() + ':' + convKey;
+    }
+
     // 构造复合键
-    function makeKey(convKey, msgId) {
-        return convKey + '_' + msgId;
+    function makeKey(scopedConvKey, msgId) {
+        return scopedConvKey + '_' + msgId;
     }
 
     function buildMessageRecord(convKey, msg) {
+        var scopedKey = scopeConvKey(convKey);
         return {
-            conv_msg_id: makeKey(convKey, msg.id),
-            conv_key: convKey,
+            conv_msg_id: makeKey(scopedKey, msg.id),
+            conv_key: scopedKey,
+            raw_conv_key: convKey,
+            user_scope: currentUserScope(),
             msg_id: msg.id,
             data: msg,
             created_at: msg.created_at || ''
@@ -66,7 +88,8 @@ var msgStore = (function() {
             return new Promise(function(resolve, reject) {
                 var tx = db.transaction('messages', 'readwrite');
                 var store = tx.objectStore('messages');
-                var key = makeKey(convKey, msg.id);
+                var scopedKey = scopeConvKey(convKey);
+                var key = makeKey(scopedKey, msg.id);
                 var req = store.get(key);
                 req.onsuccess = function(e) {
                     var record = mergeMessageRecord(e.target.result, buildMessageRecord(convKey, msg));
@@ -86,9 +109,10 @@ var msgStore = (function() {
             return new Promise(function(resolve, reject) {
                 var tx = db.transaction('messages', 'readwrite');
                 var store = tx.objectStore('messages');
+                var scopedKey = scopeConvKey(convKey);
                 for (let i = 0; i < msgs.length; i++) {
                     let msg = msgs[i];
-                    let req = store.get(makeKey(convKey, msg.id));
+                    let req = store.get(makeKey(scopedKey, msg.id));
                     req.onsuccess = function(e) {
                         var record = mergeMessageRecord(e.target.result, buildMessageRecord(convKey, msg));
                         store.put(record);
@@ -108,7 +132,8 @@ var msgStore = (function() {
                 var store = tx.objectStore('messages');
                 var idx = store.index('conv_key');
                 var msgs = [];
-                idx.openCursor(IDBKeyRange.only(convKey)).onsuccess = function(e) {
+                var scopedKey = scopeConvKey(convKey);
+                idx.openCursor(IDBKeyRange.only(scopedKey)).onsuccess = function(e) {
                     var cursor = e.target.result;
                     if (cursor) {
                         msgs.push(cursor.value.data);
@@ -131,8 +156,9 @@ var msgStore = (function() {
                 var store = tx.objectStore('messages');
                 var idx = store.index('conv_key');
                 var msgs = [];
+                var scopedKey = scopeConvKey(convKey);
                 // 逆序遍历取最新 N 条
-                idx.openCursor(IDBKeyRange.only(convKey), 'prev').onsuccess = function(e) {
+                idx.openCursor(IDBKeyRange.only(scopedKey), 'prev').onsuccess = function(e) {
                     var cursor = e.target.result;
                     if (cursor && msgs.length < limit) {
                         msgs.push(cursor.value.data);
@@ -156,7 +182,7 @@ var msgStore = (function() {
             return new Promise(function(resolve, reject) {
                 var tx = db.transaction('meta', 'readonly');
                 var store = tx.objectStore('meta');
-                var req = store.get(convKey);
+                var req = store.get(scopeConvKey(convKey));
                 req.onsuccess = function(e) {
                     var meta = e.target.result;
                     resolve(meta ? (meta.last_msg_id || 0) : 0);
@@ -172,9 +198,12 @@ var msgStore = (function() {
             return new Promise(function(resolve, reject) {
                 var tx = db.transaction('meta', 'readwrite');
                 var store = tx.objectStore('meta');
-                var req = store.get(convKey);
+                var scopedKey = scopeConvKey(convKey);
+                var req = store.get(scopedKey);
                 req.onsuccess = function(e) {
-                    var meta = e.target.result || { conv_key: convKey };
+                    var meta = e.target.result || { conv_key: scopedKey };
+                    meta.raw_conv_key = convKey;
+                    meta.user_scope = currentUserScope();
                     var oldID = meta.last_msg_id || 0;
                     meta.last_msg_id = msgId > oldID ? msgId : oldID;
                     meta.last_sync_at = Date.now();
@@ -200,8 +229,9 @@ var msgStore = (function() {
                 var store = tx.objectStore('messages');
                 var count = 0;
                 function next() { if (++count === msgIds.length) resolve(); }
+                var scopedKey = scopeConvKey(convKey);
                 for (let i = 0; i < msgIds.length; i++) {
-                    var key = makeKey(convKey, msgIds[i]);
+                    var key = makeKey(scopedKey, msgIds[i]);
                     var req = store.get(key);
                     req.onsuccess = function(e) {
                         var rec = e.target.result;
@@ -224,7 +254,8 @@ var msgStore = (function() {
                 var tx = db.transaction('messages', 'readwrite');
                 var store = tx.objectStore('messages');
                 var idx = store.index('conv_key');
-                var req = idx.openKeyCursor(IDBKeyRange.only(convKey));
+                var scopedKey = scopeConvKey(convKey);
+                var req = idx.openKeyCursor(IDBKeyRange.only(scopedKey));
                 req.onsuccess = function(e) {
                     var cursor = e.target.result;
                     if (cursor) { store.delete(cursor.primaryKey); cursor.continue(); }
@@ -242,9 +273,19 @@ var msgStore = (function() {
                 var tx = db.transaction('meta', 'readonly');
                 var store = tx.objectStore('meta');
                 var keys = [];
+                var scope = currentUserScope();
                 store.openCursor().onsuccess = function(e) {
                     var cursor = e.target.result;
-                    if (cursor) { keys.push(cursor.value); cursor.continue(); }
+                    if (cursor) {
+                        if (cursor.value.user_scope === scope) {
+                            keys.push({
+                                conv_key: cursor.value.raw_conv_key || cursor.value.conv_key,
+                                last_msg_id: cursor.value.last_msg_id || 0,
+                                last_sync_at: cursor.value.last_sync_at || 0
+                            });
+                        }
+                        cursor.continue();
+                    }
                     else resolve(keys);
                 };
             });
