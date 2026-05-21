@@ -411,6 +411,29 @@ body {
 	cursor: pointer;
 }
 .quote-reply-btn:hover { color: var(--primary); }
+.recall-message-btn {
+	margin-left: 8px;
+	border: none;
+	background: transparent;
+	color: var(--warning);
+	font-size: 11px;
+	cursor: pointer;
+}
+.recall-message-btn:hover { color: var(--danger); }
+.recall-message-btn:disabled {
+	cursor: default;
+	opacity: 0.6;
+}
+.chat-messages .msg.recalled .bubble,
+.chat-messages .msg.recalled.from-me .bubble {
+	border: 1px dashed var(--border);
+	background: var(--surface-hover);
+	color: var(--text-muted);
+}
+.msg-recalled {
+	color: var(--text-muted);
+	font-style: italic;
+}
 .quote-ref {
 	display: flex;
 	flex-direction: column;
