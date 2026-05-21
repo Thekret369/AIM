@@ -496,6 +496,9 @@ func TestUserAIBotCRUDDoesNotExposeAPIKey(t *testing.T) {
 	if !created.CanEdit || !created.APIKeySet || created.IsSystem {
 		t.Fatalf("unexpected created info: %+v", created)
 	}
+	if !created.Ready || created.UnavailableReason != "" {
+		t.Fatalf("created bot should be ready, got %+v", created)
+	}
 
 	bots, err := aiSvc.ListUserBots(owner.ID)
 	if err != nil {
@@ -527,6 +530,22 @@ func TestUserAIBotCRUDDoesNotExposeAPIKey(t *testing.T) {
 	}
 	if len(bots) != 0 {
 		t.Fatalf("deleted bot should be hidden, got %+v", bots)
+	}
+}
+
+func TestAIBotInfoReportsUnavailableConfig(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_unavailable_owner")
+	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{})
+	bot, err := aiSvc.CreateUserBot(owner.ID, AIBotInput{
+		Name:      "Missing Config",
+		APISource: model.AIBotAPISourceSystem,
+	})
+	if err != nil {
+		t.Fatalf("create unavailable bot: %v", err)
+	}
+	if bot.Ready || bot.UnavailableReason == "" {
+		t.Fatalf("expected unavailable bot info, got %+v", bot)
 	}
 }
 
