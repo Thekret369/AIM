@@ -5,6 +5,7 @@
 package ai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -62,9 +63,24 @@ type ChatResponse struct {
 	Usage   Usage
 }
 
+// ChatStreamChunk 是模型流式返回的一段增量内容。
+type ChatStreamChunk struct {
+	Delta string
+	Done  bool
+	Usage Usage
+}
+
+// StreamHandler 处理模型流式返回的增量内容。
+type StreamHandler func(ChatStreamChunk) error
+
 // Client 封装大模型调用，业务层不直接依赖具体厂商 SDK。
 type Client interface {
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
+}
+
+// StreamingClient 表示支持流式 Chat Completions 的客户端。
+type StreamingClient interface {
+	ChatStream(ctx context.Context, req ChatRequest, onChunk StreamHandler) (*ChatResponse, error)
 }
 
 // OpenAICompatibleClient 调用兼容 OpenAI Chat Completions 协议的模型服务。
@@ -84,42 +100,9 @@ func NewOpenAICompatibleClient(timeout time.Duration) *OpenAICompatibleClient {
 
 // Chat 发起一次非流式对话请求。
 func (c *OpenAICompatibleClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	if c == nil {
-		return nil, errors.New("ai client is nil")
-	}
-	if strings.TrimSpace(req.BaseURL) == "" {
-		return nil, errors.New("ai base url is empty")
-	}
-	if strings.TrimSpace(req.Model) == "" {
-		return nil, errors.New("ai model is empty")
-	}
-	if len(req.Messages) == 0 {
-		return nil, errors.New("ai messages is empty")
-	}
-
-	body := map[string]interface{}{
-		"model":    req.Model,
-		"messages": req.Messages,
-	}
-	if req.Temperature != nil {
-		body["temperature"] = *req.Temperature
-	}
-	if req.MaxTokens > 0 {
-		body["max_tokens"] = req.MaxTokens
-	}
-
-	payload, err := json.Marshal(body)
+	httpReq, err := c.newChatCompletionRequest(ctx, req, false)
 	if err != nil {
 		return nil, err
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, chatCompletionsURL(req.BaseURL), bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if strings.TrimSpace(req.APIKey) != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(req.APIKey))
 	}
 
 	resp, err := c.httpClient.Do(httpReq)
@@ -151,6 +134,120 @@ func (c *OpenAICompatibleClient) Chat(ctx context.Context, req ChatRequest) (*Ch
 	return &ChatResponse{Content: content, Usage: out.Usage}, nil
 }
 
+// ChatStream 发起一次流式对话请求，并把每段 delta 交给调用方。
+func (c *OpenAICompatibleClient) ChatStream(ctx context.Context, req ChatRequest, onChunk StreamHandler) (*ChatResponse, error) {
+	httpReq, err := c.newChatCompletionRequest(ctx, req, true)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("ai provider status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+
+	var usage Usage
+	var content strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			break
+		}
+
+		var out chatCompletionStreamResponse
+		if err := json.Unmarshal([]byte(data), &out); err != nil {
+			return nil, err
+		}
+		if out.Error != nil && out.Error.Message != "" {
+			return nil, errors.New(out.Error.Message)
+		}
+		if out.Usage != (Usage{}) {
+			usage = out.Usage
+		}
+		for _, choice := range out.Choices {
+			delta := choice.Delta.Content
+			if delta == "" {
+				continue
+			}
+			content.WriteString(delta)
+			if onChunk != nil {
+				if err := onChunk(ChatStreamChunk{Delta: delta}); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	finalContent := strings.TrimSpace(content.String())
+	if finalContent == "" {
+		return nil, errors.New("ai provider returned empty content")
+	}
+	return &ChatResponse{Content: finalContent, Usage: usage}, nil
+}
+
+func (c *OpenAICompatibleClient) newChatCompletionRequest(ctx context.Context, req ChatRequest, stream bool) (*http.Request, error) {
+	if c == nil {
+		return nil, errors.New("ai client is nil")
+	}
+	if strings.TrimSpace(req.BaseURL) == "" {
+		return nil, errors.New("ai base url is empty")
+	}
+	if strings.TrimSpace(req.Model) == "" {
+		return nil, errors.New("ai model is empty")
+	}
+	if len(req.Messages) == 0 {
+		return nil, errors.New("ai messages is empty")
+	}
+
+	body := map[string]interface{}{
+		"model":    req.Model,
+		"messages": req.Messages,
+	}
+	if req.Temperature != nil {
+		body["temperature"] = *req.Temperature
+	}
+	if req.MaxTokens > 0 {
+		body["max_tokens"] = req.MaxTokens
+	}
+	if stream {
+		body["stream"] = true
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, chatCompletionsURL(req.BaseURL), bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(req.APIKey) != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(req.APIKey))
+	}
+	return httpReq, nil
+}
+
 func chatCompletionsURL(baseURL string) string {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if strings.HasSuffix(base, "/chat/completions") {
@@ -164,6 +261,16 @@ type chatCompletionResponse struct {
 		Message ChatMessage `json:"message"`
 	} `json:"choices"`
 	Usage Usage `json:"usage"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
+type chatCompletionStreamResponse struct {
+	Choices []struct {
+		Delta ChatMessage `json:"delta"`
+	} `json:"choices"`
+	Usage Usage `json:"usage,omitempty"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
