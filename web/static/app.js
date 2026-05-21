@@ -66,8 +66,18 @@ async function api(method, path, body) {
     if (body) opts.body = JSON.stringify(body);
 
     const resp = await fetch('/api' + path, opts);
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || '请求失败');
+    const text = await resp.text();
+    let data = {};
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        } catch (e) {
+            // 例如旧后端未注册接口时会返回 "404 page not found"，不能直接当 JSON 解析。
+            if (resp.status === 404) throw new Error('接口不存在或服务未更新，请重启后端');
+            throw new Error(text.trim() || resp.statusText || '请求失败');
+        }
+    }
+    if (!resp.ok) throw new Error(data.error || data.message || resp.statusText || '请求失败');
     return data;
 }
 
