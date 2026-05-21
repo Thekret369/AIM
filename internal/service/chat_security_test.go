@@ -388,6 +388,44 @@ func TestGetGroupReadsRejectsNonMember(t *testing.T) {
 	}
 }
 
+func TestGetHistoryIsolatesAIDirectMessagesPerUser(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "history_ai_alice")
+	bob := createSecurityUser(t, "history_ai_bob")
+	bot := createAIUser(t, "history_ai_bot")
+
+	botID := bot.ID
+	aliceID := alice.ID
+	bobID := bob.ID
+	seed := []*model.Message{
+		{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &botID, Content: "alice to blue private"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &aliceID, Content: "blue to alice private"},
+		{Type: model.MsgText, FromUserID: bob.ID, ToUserID: &botID, Content: "bob to blue private"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &bobID, Content: "blue to bob private"},
+	}
+	for _, msg := range seed {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("seed ai direct message: %v", err)
+		}
+	}
+
+	got, total, err := chatSvc.GetHistory(bob.ID, bot.ID, 1, 20, 0)
+	if err != nil {
+		t.Fatalf("get bob ai history: %v", err)
+	}
+	if total != 2 || len(got) != 2 {
+		t.Fatalf("expected only bob-blue history, total=%d len=%d", total, len(got))
+	}
+	for _, msg := range got {
+		if msg.FromUserID != bob.ID && (msg.ToUserID == nil || *msg.ToUserID != bob.ID) {
+			t.Fatalf("history returned message outside bob-blue conversation: %+v", msg)
+		}
+		if msg.Content == "alice to blue private" || msg.Content == "blue to alice private" {
+			t.Fatalf("history leaked alice-blue message: %q", msg.Content)
+		}
+	}
+}
+
 func TestSearchMessagesUserScope(t *testing.T) {
 	chatSvc, _ := setupChatSecurityTest(t)
 	alice := createSecurityUser(t, "search_alice")
@@ -425,6 +463,41 @@ func TestSearchMessagesUserScope(t *testing.T) {
 	for _, msg := range got {
 		if msg.FromUserID != alice.ID && msg.FromUserID != bob.ID {
 			t.Fatalf("search returned out-of-scope sender %d", msg.FromUserID)
+		}
+	}
+}
+
+func TestSearchMessagesUserScopeIsolatesAIDirectMessagesPerUser(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "search_ai_alice")
+	bob := createSecurityUser(t, "search_ai_bob")
+	bot := createAIUser(t, "search_ai_bot")
+
+	botID := bot.ID
+	aliceID := alice.ID
+	bobID := bob.ID
+	seed := []*model.Message{
+		{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &botID, Content: "shared ai keyword from alice"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &aliceID, Content: "shared ai keyword to alice"},
+		{Type: model.MsgText, FromUserID: bob.ID, ToUserID: &botID, Content: "shared ai keyword from bob"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &bobID, Content: "shared ai keyword to bob"},
+	}
+	for _, msg := range seed {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("seed ai search message: %v", err)
+		}
+	}
+
+	got, total, err := chatSvc.SearchMessages(bob.ID, "user", bot.ID, "shared ai keyword", 1, 20)
+	if err != nil {
+		t.Fatalf("search bob ai messages: %v", err)
+	}
+	if total != 2 || len(got) != 2 {
+		t.Fatalf("expected only bob-blue search results, total=%d len=%d", total, len(got))
+	}
+	for _, msg := range got {
+		if msg.Content == "shared ai keyword from alice" || msg.Content == "shared ai keyword to alice" {
+			t.Fatalf("search leaked alice-blue message: %q", msg.Content)
 		}
 	}
 }
@@ -602,6 +675,46 @@ func TestSearchMessagesGlobalAndTimeRange(t *testing.T) {
 	}
 }
 
+func TestSearchMessagesGlobalScopeIsolatesAIDirectMessagesPerUser(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "global_ai_alice")
+	bob := createSecurityUser(t, "global_ai_bob")
+	bot := createAIUser(t, "global_ai_bot")
+
+	botID := bot.ID
+	aliceID := alice.ID
+	bobID := bob.ID
+	seed := []*model.Message{
+		{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &botID, Content: "global ai needle from alice"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &aliceID, Content: "global ai needle to alice"},
+		{Type: model.MsgText, FromUserID: bob.ID, ToUserID: &botID, Content: "global ai needle from bob"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &bobID, Content: "global ai needle to bob"},
+	}
+	for _, msg := range seed {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("seed global ai message: %v", err)
+		}
+	}
+
+	got, total, err := chatSvc.SearchMessagesWithParams(bob.ID, MessageSearchParams{
+		Scope:    "all",
+		Keyword:  "global ai needle",
+		Page:     1,
+		PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("global search bob ai messages: %v", err)
+	}
+	if total != 2 || len(got) != 2 {
+		t.Fatalf("expected only bob-visible global ai results, total=%d len=%d", total, len(got))
+	}
+	for _, msg := range got {
+		if msg.Content == "global ai needle from alice" || msg.Content == "global ai needle to alice" {
+			t.Fatalf("global search leaked alice-blue message: %q", msg.Content)
+		}
+	}
+}
+
 func TestOfflineSyncMessagesUseReadWatermarks(t *testing.T) {
 	chatSvc, groupSvc := setupChatSecurityTest(t)
 	sender := createSecurityUser(t, "offline_sender")
@@ -655,5 +768,42 @@ func TestOfflineSyncMessagesUseReadWatermarks(t *testing.T) {
 	}
 	if !got[second.ID] || !got[groupMsg.ID] {
 		t.Fatalf("expected unread direct and group messages, got ids=%v", got)
+	}
+}
+
+func TestOfflineSyncDoesNotLeakOtherUsersAIDirectMessages(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "offline_ai_alice")
+	bob := createSecurityUser(t, "offline_ai_bob")
+	bot := createAIUser(t, "offline_ai_bot")
+
+	botID := bot.ID
+	aliceID := alice.ID
+	bobID := bob.ID
+	seed := []*model.Message{
+		{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &botID, Content: "offline alice to blue"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &aliceID, Content: "offline blue to alice"},
+		{Type: model.MsgText, FromUserID: bob.ID, ToUserID: &botID, Content: "offline bob to blue"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &bobID, Content: "offline blue to bob"},
+	}
+	for _, msg := range seed {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("seed offline ai message: %v", err)
+		}
+	}
+
+	msgs, err := chatSvc.getOfflineSyncMessages(bob.ID)
+	if err != nil {
+		t.Fatalf("get bob offline messages: %v", err)
+	}
+	got := make(map[string]bool)
+	for _, msg := range msgs {
+		got[msg.Content] = true
+	}
+	if got["offline blue to alice"] || got["offline alice to blue"] {
+		t.Fatalf("offline sync leaked alice-blue messages: %+v", got)
+	}
+	if !got["offline blue to bob"] {
+		t.Fatalf("expected bob to receive unread blue reply, got %+v", got)
 	}
 }
