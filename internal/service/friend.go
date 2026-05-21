@@ -3,6 +3,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 
 	"AIM/internal/model"
 
@@ -28,6 +29,10 @@ func (s *FriendService) AddFriend(userID, friendID uint, message string) (*model
 	if userID == friendID {
 		return nil, errors.New("不能添加自己为好友")
 	}
+	var target model.User
+	if err := model.DB.Select("id").First(&target, friendID).Error; err != nil {
+		return nil, errors.New("用户不存在")
+	}
 
 	// 检查是否已存在好友关系
 	var existing model.FriendRelation
@@ -42,6 +47,8 @@ func (s *FriendService) AddFriend(userID, friendID uint, message string) (*model
 		case "accepted":
 			return nil, errors.New("已经是好友")
 		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
 	}
 
 	rel := &model.FriendRelation{
@@ -51,6 +58,9 @@ func (s *FriendService) AddFriend(userID, friendID uint, message string) (*model
 		Remark:   message,
 	}
 	if err := model.DB.Create(rel).Error; err != nil {
+		if isUniqueConstraintError(err) {
+			return nil, errors.New("已有好友关系")
+		}
 		return nil, err
 	}
 	return rel, nil
@@ -58,48 +68,68 @@ func (s *FriendService) AddFriend(userID, friendID uint, message string) (*model
 
 // HandleRequest 同意或拒绝好友申请
 func (s *FriendService) HandleRequest(relationID, userID uint, accept bool) error {
-	var rel model.FriendRelation
-	if err := model.DB.First(&rel, relationID).Error; err != nil {
-		return errors.New("好友申请不存在")
-	}
-	// 只有接收申请的一方才能处理
-	if rel.FriendID != userID {
-		return errors.New("无权处理该申请")
-	}
-	if rel.Status != "pending" {
-		return errors.New("申请已被处理")
-	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var rel model.FriendRelation
+		if err := tx.First(&rel, relationID).Error; err != nil {
+			return errors.New("好友申请不存在")
+		}
+		// 只有接收申请的一方才能处理
+		if rel.FriendID != userID {
+			return errors.New("无权处理该申请")
+		}
+		if rel.Status != "pending" {
+			return errors.New("申请已被处理")
+		}
 
-	if accept {
-		rel.Status = "accepted"
-		if err := model.DB.Save(&rel).Error; err != nil {
+		if !accept {
+			return tx.Delete(&rel).Error // 拒绝则删除记录
+		}
+
+		if err := tx.Model(&rel).Update("status", "accepted").Error; err != nil {
 			return err
 		}
-		// 双向创建：被添加方也能在好友列表中看到对方
-		reverse := &model.FriendRelation{
-			UserID:   rel.FriendID,
-			FriendID: rel.UserID,
-			Status:   "accepted",
-		}
-		return model.DB.Create(reverse).Error
-	} else {
-		return model.DB.Delete(&rel).Error // 拒绝则删除记录
-	}
+		return ensureAcceptedFriendRelationTx(tx, rel.FriendID, rel.UserID)
+	})
 }
 
 // DeleteFriend 删除好友（双向删除）
 func (s *FriendService) DeleteFriend(userID, friendID uint) error {
-	return model.DB.Where(
+	result := model.DB.Where(
 		"(user_id = ? AND friend_id = ? AND status = 'accepted') OR (user_id = ? AND friend_id = ? AND status = 'accepted')",
 		userID, friendID, friendID, userID,
-	).Delete(&model.FriendRelation{}).Error
+	).Delete(&model.FriendRelation{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("好友关系不存在")
+	}
+	return nil
 }
 
 // UpdateRemark 修改好友备注名或备注信息
 func (s *FriendService) UpdateRemark(userID, friendID uint, remark, note string, groupID *uint) error {
-	return model.DB.Model(&model.FriendRelation{}).
-		Where("user_id = ? AND friend_id = ? AND status = 'accepted'", userID, friendID).
-		Updates(map[string]interface{}{"remark": remark, "note": note, "group_id": groupID}).Error
+	var rel model.FriendRelation
+	if err := model.DB.Where("user_id = ? AND friend_id = ? AND status = 'accepted'", userID, friendID).
+		First(&rel).Error; err != nil {
+		return errors.New("好友关系不存在")
+	}
+	if groupID != nil {
+		var count int64
+		if err := model.DB.Model(&model.ContactGroup{}).
+			Where("id = ? AND user_id = ?", *groupID, userID).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return errors.New("联系人分组不存在")
+		}
+	}
+	return model.DB.Model(&rel).Updates(map[string]interface{}{
+		"remark":   strings.TrimSpace(remark),
+		"note":     strings.TrimSpace(note),
+		"group_id": groupID,
+	}).Error
 }
 
 // FriendList 获取好友列表（含对方用户名/昵称）
@@ -122,7 +152,9 @@ func (s *FriendService) FriendList(userID uint) ([]FriendInfo, error) {
 		friendIDs[i] = r.FriendID
 	}
 	var users []model.User
-	model.DB.Where("id IN ?", friendIDs).Find(&users)
+	if err := model.DB.Where("id IN ?", friendIDs).Find(&users).Error; err != nil {
+		return nil, err
+	}
 	userMap := make(map[uint]model.User)
 	for _, u := range users {
 		userMap[u.ID] = u
@@ -162,7 +194,9 @@ func (s *FriendService) PendingRequests(userID uint) ([]FriendInfo, error) {
 		userIDs[i] = r.UserID
 	}
 	var users []model.User
-	model.DB.Where("id IN ?", userIDs).Find(&users)
+	if err := model.DB.Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+		return nil, err
+	}
 	userMap := make(map[uint]model.User)
 	for _, u := range users {
 		userMap[u.ID] = u
