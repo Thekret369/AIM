@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"AIM/internal/model"
+	"AIM/internal/ws"
 	"AIM/pkg/ai"
 
 	"gorm.io/datatypes"
@@ -19,6 +20,8 @@ import (
 const disabledAIPassword = "AI_USER_DISABLED_LOGIN"
 
 const (
+	aiSetupHintReply           = "AI 尚未配置，请在后端补充 API 地址和模型后再使用。"
+	aiProviderFallbackReply    = "AI 暂时无法回复，请稍后再试。"
 	aiInputPricePerMillionCNY  = 1.0
 	aiOutputPricePerMillionCNY = 3.0
 )
@@ -424,23 +427,8 @@ func (s *AIService) HandleMessage(msg *model.Message) {
 		return
 	}
 	for _, trigger := range triggers {
-		result, err := s.generateReply(context.Background(), trigger.Bot, msg)
-		reply := ""
-		if err != nil {
-			log.Printf("[ai] generate reply failed: bot=%d msg=%d err=%v", trigger.Bot.ID, msg.ID, err)
-			reply = "AI 暂时无法回复，请稍后再试。"
-		} else {
-			reply = result.Content
-		}
-		replyMsg, err := s.sendReply(trigger.Bot, msg, reply)
-		if err != nil {
-			log.Printf("[ai] send reply failed: bot=%d msg=%d err=%v", trigger.Bot.ID, msg.ID, err)
-			continue
-		}
-		if result != nil && result.ProviderCalled {
-			if err := s.recordTokenUsage(result.Runtime, msg, replyMsg, result.Usage); err != nil {
-				log.Printf("[ai] record token usage failed: bot=%d msg=%d err=%v", trigger.Bot.ID, msg.ID, err)
-			}
+		if err := s.replyToTrigger(context.Background(), trigger.Bot, msg); err != nil {
+			log.Printf("[ai] reply failed: bot=%d msg=%d err=%v", trigger.Bot.ID, msg.ID, err)
 		}
 	}
 }
@@ -625,13 +613,13 @@ func (s *AIService) generateReply(parent context.Context, bot model.User, source
 		return nil, err
 	}
 	if runtime.BaseURL == "" {
-		return &aiCompletionResult{Content: "AI 尚未配置，请在后端补充 API 地址和模型后再使用。", Runtime: runtime}, nil
+		return &aiCompletionResult{Content: aiSetupHintReply, Runtime: runtime}, nil
 	}
 	if runtime.Model == "" {
-		return &aiCompletionResult{Content: "AI 尚未配置，请在后端补充 API 地址和模型后再使用。", Runtime: runtime}, nil
+		return &aiCompletionResult{Content: aiSetupHintReply, Runtime: runtime}, nil
 	}
 
-	messages, err := s.buildPrompt(runtime, source)
+	req, err := s.buildChatRequest(runtime, source)
 	if err != nil {
 		return nil, err
 	}
@@ -639,15 +627,70 @@ func (s *AIService) generateReply(parent context.Context, bot model.User, source
 	ctx, cancel := context.WithTimeout(parent, s.Config.Timeout)
 	defer cancel()
 
+	return s.completeReply(ctx, runtime, req)
+}
+
+func (s *AIService) replyToTrigger(parent context.Context, bot model.User, source *model.Message) error {
+	runtime, err := s.loadRuntime(bot)
+	if err != nil {
+		return err
+	}
+	if runtime.BaseURL == "" || runtime.Model == "" {
+		_, err := s.sendReply(bot, source, aiSetupHintReply)
+		return err
+	}
+
+	req, err := s.buildChatRequest(runtime, source)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(parent, s.Config.Timeout)
+	defer cancel()
+
+	if streamClient, ok := s.Client.(ai.StreamingClient); ok {
+		return s.streamReply(ctx, streamClient, runtime, bot, source, req)
+	}
+
+	result, err := s.completeReply(ctx, runtime, req)
+	reply := aiProviderFallbackReply
+	if err != nil {
+		log.Printf("[ai] generate reply failed: bot=%d msg=%d err=%v", bot.ID, source.ID, err)
+	} else {
+		reply = result.Content
+	}
+
+	replyMsg, err := s.sendReply(bot, source, reply)
+	if err != nil {
+		return err
+	}
+	if result != nil && result.ProviderCalled {
+		if err := s.recordTokenUsage(result.Runtime, source, replyMsg, result.Usage); err != nil {
+			log.Printf("[ai] record token usage failed: bot=%d msg=%d err=%v", bot.ID, source.ID, err)
+		}
+	}
+	return nil
+}
+
+func (s *AIService) buildChatRequest(runtime *aiRuntime, source *model.Message) (ai.ChatRequest, error) {
+	messages, err := s.buildPrompt(runtime, source)
+	if err != nil {
+		return ai.ChatRequest{}, err
+	}
+
 	temperature := runtime.Temperature
-	resp, err := s.Client.Chat(ctx, ai.ChatRequest{
+	return ai.ChatRequest{
 		BaseURL:     runtime.BaseURL,
 		APIKey:      runtime.APIKey,
 		Model:       runtime.Model,
 		Messages:    messages,
 		Temperature: &temperature,
 		MaxTokens:   runtime.MaxTokens,
-	})
+	}, nil
+}
+
+func (s *AIService) completeReply(ctx context.Context, runtime *aiRuntime, req ai.ChatRequest) (*aiCompletionResult, error) {
+	resp, err := s.Client.Chat(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -657,6 +700,62 @@ func (s *AIService) generateReply(parent context.Context, bot model.User, source
 		Runtime:        runtime,
 		ProviderCalled: true,
 	}, nil
+}
+
+func (s *AIService) streamReply(ctx context.Context, streamClient ai.StreamingClient, runtime *aiRuntime, bot model.User, source *model.Message, req ai.ChatRequest) error {
+	replyMsg, err := s.sendReply(bot, source, "")
+	if err != nil {
+		return err
+	}
+
+	var streamed strings.Builder
+	resp, err := streamClient.ChatStream(ctx, req, func(chunk ai.ChatStreamChunk) error {
+		if chunk.Delta == "" {
+			return nil
+		}
+		streamed.WriteString(chunk.Delta)
+		s.sendAIStream(source, &ws.AIStreamPayload{
+			MessageID: replyMsg.ID,
+			Delta:     chunk.Delta,
+			Content:   streamed.String(),
+		})
+		return nil
+	})
+	if err != nil {
+		log.Printf("[ai] stream reply failed: bot=%d msg=%d err=%v", bot.ID, source.ID, err)
+		if updateErr := s.finishStreamedReply(replyMsg, aiProviderFallbackReply); updateErr != nil {
+			return updateErr
+		}
+		s.sendAIStream(source, &ws.AIStreamPayload{
+			MessageID: replyMsg.ID,
+			Content:   aiProviderFallbackReply,
+			Done:      true,
+			Error:     aiProviderFallbackReply,
+		})
+		return nil
+	}
+
+	content := ""
+	if resp != nil {
+		content = resp.Content
+	}
+	if strings.TrimSpace(content) == "" {
+		content = streamed.String()
+	}
+	if err := s.finishStreamedReply(replyMsg, content); err != nil {
+		return err
+	}
+	s.sendAIStream(source, &ws.AIStreamPayload{
+		MessageID: replyMsg.ID,
+		Content:   strings.TrimSpace(content),
+		Done:      true,
+	})
+	if resp != nil {
+		if err := s.recordTokenUsage(runtime, source, replyMsg, resp.Usage); err != nil {
+			log.Printf("[ai] record token usage failed: bot=%d msg=%d err=%v", bot.ID, source.ID, err)
+		}
+	}
+	return nil
 }
 
 func (s *AIService) loadRuntime(bot model.User) (*aiRuntime, error) {
@@ -831,6 +930,44 @@ func (s *AIService) sendReply(bot model.User, source *model.Message, content str
 		return nil, err
 	}
 	return reply, nil
+}
+
+func (s *AIService) finishStreamedReply(reply *model.Message, content string) error {
+	if reply == nil {
+		return errors.New("reply message is nil")
+	}
+	reply.Content = strings.TrimSpace(content)
+	if err := model.DB.Model(&model.Message{}).
+		Where("id = ?", reply.ID).
+		Update("content", reply.Content).Error; err != nil {
+		return err
+	}
+	if err := preloadMessageRelations(model.DB).First(reply, reply.ID).Error; err != nil {
+		return err
+	}
+	s.Chat.dispatchMessage(reply)
+	return nil
+}
+
+func (s *AIService) sendAIStream(source *model.Message, payload *ws.AIStreamPayload) {
+	if s == nil || s.Chat == nil || s.Chat.Hub == nil || source == nil || payload == nil || payload.MessageID == 0 {
+		return
+	}
+	if source.IsToGroup() && source.GroupID != nil {
+		var memberIDs []uint
+		model.DB.Model(&model.GroupMember{}).
+			Where("group_id = ?", *source.GroupID).
+			Pluck("user_id", &memberIDs)
+		s.Chat.Hub.SendAIStreamToUsers(memberIDs, payload)
+		return
+	}
+	if source.IsToUser() && source.ToUserID != nil {
+		userIDs := []uint{source.FromUserID}
+		if *source.ToUserID != source.FromUserID {
+			userIDs = append(userIDs, *source.ToUserID)
+		}
+		s.Chat.Hub.SendAIStreamToUsers(userIDs, payload)
+	}
 }
 
 func (s *AIService) normalizeCreateAIBotInput(input *AIBotInput) error {
