@@ -16,6 +16,7 @@ const (
 	WSMChat        WSMessageType = "chat"         // 聊天消息，Payload 为 model.Message JSON
 	WSMTyping      WSMessageType = "typing"       // 输入状态
 	WSMReadReceipt WSMessageType = "read_receipt" // 已读回执
+	WSMAIStream    WSMessageType = "ai_stream"    // AI 回复流式增量
 	WSMStatus      WSMessageType = "status"       // 在线状态变更
 	WSMAck         WSMessageType = "ack"          // 服务端确认
 	WSMError       WSMessageType = "error"        // 服务端错误
@@ -70,6 +71,15 @@ type ErrorPayload struct {
 	RequestID string `json:"request_id,omitempty"`
 	Code      string `json:"code"`
 	Message   string `json:"message"`
+}
+
+// AIStreamPayload 携带某条 AI 回复消息的增量内容。
+type AIStreamPayload struct {
+	MessageID uint   `json:"message_id"`
+	Delta     string `json:"delta,omitempty"`
+	Content   string `json:"content,omitempty"`
+	Done      bool   `json:"done,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // IsClientMessageTypeAllowed 限定客户端可主动发送的 WS 类型。
