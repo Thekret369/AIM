@@ -118,6 +118,7 @@ let pendingOnlineSync = false;
 let onlineSyncRunning = false;
 let quotedMessageByTab = new Map();
 let pendingSends = new Map();
+const MESSAGE_RECALL_WINDOW_MS = 2 * 60 * 1000;
 
 // 群相关缓存
 let groupMembersMap = new Map();   // groupId → members[]
@@ -357,12 +358,20 @@ function updateSidebarBadge(key) {
 }
 
 function getPreviewText(msg) {
+    if (msg && msg.is_recalled) return '消息已撤回';
     switch (msg.type) {
         case 'image': return '[图片]';
         case 'file': return '[文件] ' + (msg.file_name || '');
         case 'audio': return '[语音]';
         default: return msg.content || '';
     }
+}
+
+function shouldUseAsConversationLatest(key, msg) {
+    var current = lastMessages.get(key);
+    if (!current || !current.id || !msg || !msg.id) return true;
+    if (current.id === msg.id) return true;
+    return msg.id > current.id;
 }
 
 function updateSidebarPreview(key, msg) {
@@ -507,6 +516,12 @@ function createTab(key, type, targetId, name) {
         }
     });
     panelMessagesEl.addEventListener('click', function(e) {
+        var recallBtn = e.target.closest('.recall-message-btn');
+        if (recallBtn) {
+            e.preventDefault();
+            recallMessage(key, parseInt(recallBtn.dataset.msgId || '0', 10), recallBtn);
+            return;
+        }
         var quoteBtn = e.target.closest('.quote-reply-btn');
         if (quoteBtn) {
             e.preventDefault();
@@ -966,9 +981,12 @@ onMessage = function(msg) {
     }
 
     ensureConversationForMessage(key, msg);
-    lastMessages.set(key, msg);
-    lastTimestamps.set(key, new Date(msg.created_at || Date.now()));
-    updateSidebarPreview(key, msg);
+    var updateLatest = shouldUseAsConversationLatest(key, msg);
+    if (updateLatest) {
+        lastMessages.set(key, msg);
+        lastTimestamps.set(key, new Date(msg.created_at || Date.now()));
+        updateSidebarPreview(key, msg);
+    }
 
     // 新会话补充进 conversations
     if (!conversations.find(function(c) { return c.key === key; })) {
@@ -1005,18 +1023,18 @@ onMessage = function(msg) {
         } else if (key === activeTabKey) {
             tab.messagesEl.innerHTML += renderOneMessage(msg);
             tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
-        } else if (msg.from_user_id !== myId) { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); updateTabBadge(key); }
-    } else if (msg.from_user_id !== myId) { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); }
+        } else if (!msg.is_recalled && msg.from_user_id !== myId) { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); updateTabBadge(key); }
+    } else if (!msg.is_recalled && msg.from_user_id !== myId) { unreadCounts.set(key, (unreadCounts.get(key) || 0) + 1); }
 
     // 写入本地 IndexedDB
     msgStore.putMessage(key, msg);
-    msgStore.setLastMsgID(key, msg.id);
+    if (updateLatest) msgStore.setLastMsgID(key, msg.id);
 
-    sortConversations();
+    if (updateLatest) sortConversations();
     renderSidebar();
     updateOnlineDots();
     updateSidebarBadge(key);
-    if (key === activeTabKey && msg.from_user_id !== getUserId()) {
+    if (key === activeTabKey && !msg.is_recalled && msg.from_user_id !== getUserId()) {
         sendReadReceiptForTab(key);
     }
 };
@@ -1038,6 +1056,7 @@ function formatMsgTime(createdAt) {
 
 function quoteMessageSummary(msg) {
     if (!msg) return '';
+    if (msg.is_recalled) return '消息已撤回';
     return getPreviewText(msg).replace(/\s+/g, ' ').substring(0, 80);
 }
 
@@ -1050,41 +1069,58 @@ function renderQuoteMessage(quote) {
     '</button>';
 }
 
+function canRecallMessage(msg) {
+    if (!msg || !msg.id || msg.is_recalled) return false;
+    if (msg.from_user_id !== getUserId()) return false;
+    if (!msg.to_user_id && !msg.group_id) return false;
+    var createdAt = new Date(msg.created_at || 0).getTime();
+    if (!createdAt) return false;
+    return Date.now() - createdAt <= MESSAGE_RECALL_WINDOW_MS;
+}
+
 function renderOneMessage(msg) {
     var isMe = msg.from_user_id === getUserId();
     var cls = isMe ? 'from-me' : '';
+    if (msg.is_recalled) cls += ' recalled';
     var name = msg.from_user ? (msg.from_user.nickname || msg.from_user.username) : ('用户' + msg.from_user_id);
     var body = '';
-    switch (msg.type) {
-        case 'image':
-            var src = msg.thumbnail_url || msg.content;
-            body = '<div class="msg-image"><img src="' + escapeHtml(src) + '" loading="lazy" onclick="viewImage(\'' + escapeHtml(msg.content) + '\')"></div>';
-            break;
-        case 'file':
-            body = '<div class="msg-file">' +
-                '<div class="file-icon">📄</div>' +
-                '<div class="file-info">' +
-                    '<div class="file-name" title="' + escapeHtml(msg.file_name || '') + '">' + escapeHtml(msg.file_name || '未知文件') + '</div>' +
-                    '<div class="file-size">' + formatFileSize(msg.file_size || 0) + '</div>' +
-                '</div>' +
-                '<a class="file-download" href="' + escapeHtml(msg.content) + '" download="' + escapeHtml(msg.file_name || '') + '">下载</a>' +
-            '</div>';
-            break;
-        case 'audio':
-            body = '<div class="msg-audio"><audio controls src="' + escapeHtml(msg.content) + '"></audio></div>';
-            break;
-        default:
-            body = escapeHtml(msg.content);
+    if (msg.is_recalled) {
+        body = '<div class="msg-recalled">消息已撤回</div>';
+    } else {
+        switch (msg.type) {
+            case 'image':
+                var src = msg.thumbnail_url || msg.content;
+                body = '<div class="msg-image"><img src="' + escapeHtml(src) + '" loading="lazy" onclick="viewImage(\'' + escapeHtml(msg.content) + '\')"></div>';
+                break;
+            case 'file':
+                body = '<div class="msg-file">' +
+                    '<div class="file-icon">📄</div>' +
+                    '<div class="file-info">' +
+                        '<div class="file-name" title="' + escapeHtml(msg.file_name || '') + '">' + escapeHtml(msg.file_name || '未知文件') + '</div>' +
+                        '<div class="file-size">' + formatFileSize(msg.file_size || 0) + '</div>' +
+                    '</div>' +
+                    '<a class="file-download" href="' + escapeHtml(msg.content) + '" download="' + escapeHtml(msg.file_name || '') + '">下载</a>' +
+                '</div>';
+                break;
+            case 'audio':
+                body = '<div class="msg-audio"><audio controls src="' + escapeHtml(msg.content) + '"></audio></div>';
+                break;
+            default:
+                body = escapeHtml(msg.content);
+        }
     }
     var timeStr = formatMsgTime(msg.created_at);
-    var quoteHTML = renderQuoteMessage(msg.quote_message);
-    var quoteAction = (msg.to_user_id || msg.group_id)
+    var quoteHTML = msg.is_recalled ? '' : renderQuoteMessage(msg.quote_message);
+    var quoteAction = (!msg.is_recalled && (msg.to_user_id || msg.group_id))
         ? '<button class="quote-reply-btn" type="button" data-msg-id="' + msg.id + '" title="引用回复">引用</button>'
+        : '';
+    var recallAction = canRecallMessage(msg)
+        ? '<button class="recall-message-btn" type="button" data-msg-id="' + msg.id + '" title="2 分钟内可撤回">撤回</button>'
         : '';
     var html = '<div class="msg ' + cls + '" data-msg-id="' + msg.id + '">' +
         '<div class="bubble">' +
             '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" class="text-link">' + escapeHtml(name) + '</a>' +
-            (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + quoteAction + '</div>' +
+            (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + quoteAction + recallAction + '</div>' +
             quoteHTML +
             body +
         '</div>' +
@@ -1162,6 +1198,20 @@ function focusMessageElement(key, msgId) {
     el.scrollIntoView({ block: 'center' });
     el.classList.add('search-hit');
     setTimeout(function() { el.classList.remove('search-hit'); }, 1600);
+}
+
+async function recallMessage(key, msgId, buttonEl) {
+    var tab = chatTabs.get(key);
+    var msg = findTabMessage(tab, msgId);
+    if (!tab || !msg || !canRecallMessage(msg)) return;
+    if (buttonEl) buttonEl.disabled = true;
+    try {
+        var data = await api('POST', '/messages/' + msgId + '/recall', {});
+        if (data.message && onMessage) onMessage(data.message);
+    } catch(e) {
+        renderSendFailure(key, null, e.message || '撤回失败');
+        if (buttonEl) buttonEl.disabled = false;
+    }
 }
 
 function mergeMessageState(existing, incoming) {
@@ -1422,26 +1472,12 @@ async function loadHistory(key, page) {
         } catch(e) {}
     }
 
-    // 构建 URL，有本地缓存时用 after_id 增量同步
+    // 状态更新会复用旧消息 ID，首屏固定拉最新页，避免本地缓存错过撤回态。
     var url, afterID = 0;
     if (tab.type === 'user') {
-        url = '/history?peer_id=' + tab.targetId;
-        if (page === 1) {
-            try { afterID = await msgStore.getLastMsgID(key); } catch(e) {}
-            if (afterID) url += '&after_id=' + afterID + '&page_size=50';
-            else url += '&page=' + page + '&page_size=30';
-        } else {
-            url += '&page=' + page + '&page_size=30';
-        }
+        url = '/history?peer_id=' + tab.targetId + '&page=' + page + '&page_size=30';
     } else if (tab.type === 'group') {
-        url = '/history/group/' + tab.targetId;
-        if (page === 1) {
-            try { afterID = await msgStore.getLastMsgID(key); } catch(e) {}
-            if (afterID) url += '?after_id=' + afterID + '&page_size=50';
-            else url += '?page=' + page + '&page_size=30';
-        } else {
-            url += '?page=' + page + '&page_size=30';
-        }
+        url = '/history/group/' + tab.targetId + '?page=' + page + '&page_size=30';
     } else {
         url = '/history/broadcast?page=' + page + '&page_size=30';
     }
@@ -1479,11 +1515,11 @@ async function loadHistory(key, page) {
             tab.messages = toAdd.concat(tab.messages);               // 翻页前置
         }
 
-        // 新消息写入本地 IndexedDB
-        if (toAdd.length > 0) {
-            msgStore.putMessages(key, toAdd);
-            var maxID = toAdd.reduce(function(max, m) { return m.id > max ? m.id : max; }, 0);
-            if (maxID > 0) msgStore.setLastMsgID(key, maxID);
+        // 服务端返回的同 ID 状态也要回写本地缓存，例如撤回状态。
+        if (newMsgs.length > 0) {
+            msgStore.putMessages(key, newMsgs);
+            var maxID = newMsgs.reduce(function(max, m) { return m.id > max ? m.id : max; }, 0);
+            if (page === 1 && maxID > 0) msgStore.setLastMsgID(key, maxID);
         }
 
         var oldScrollHeight = tab.messagesEl.scrollHeight;
@@ -1819,6 +1855,20 @@ function renderSendFailure(key, msg, reason) {
     }
     alert('发送失败: ' + (reason || '请求处理失败'));
 }
+
+function refreshRecallButtons() {
+    chatTabs.forEach(function(tab) {
+        if (!tab || !tab.messages || !tab.messagesEl) return;
+        var hasVisibleRecallWindow = tab.messages.some(function(msg) {
+            if (!msg || msg.from_user_id !== getUserId() || msg.is_recalled) return false;
+            var createdAt = new Date(msg.created_at || 0).getTime();
+            if (!createdAt) return false;
+            return Date.now() - createdAt <= MESSAGE_RECALL_WINDOW_MS + 30000;
+        });
+        if (hasVisibleRecallWindow) renderAllMessages(tab);
+    });
+}
+setInterval(refreshRecallButtons, 30000);
 
 // ========================================
 // 初始化
