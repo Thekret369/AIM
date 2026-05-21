@@ -208,37 +208,54 @@ function renderBots() {
     }
     list.innerHTML = bots.map(function(bot) {
         var name = bot.nickname || bot.username || ('AI用户' + bot.user_id);
-        var statusClass = bot.status === 'enabled' ? 'enabled' : 'disabled';
+        var statusClass = bot.ready ? 'enabled' : 'disabled';
         var statusText = bot.status === 'enabled' ? '启用' : '停用';
         var sourceText = apiSourceText(bot);
         var costText = usageText(bot);
         var kbText = bot.is_system ? '后台知识库' : ('知识库 ' + (bot.knowledge_base_count || 0));
-        var chatDisabled = bot.status === 'enabled' ? '' : ' disabled';
-        var editBtn = bot.can_edit ? '<button class="btn btn-primary btn-sm" onclick="openEditModal(' + bot.id + ')">编辑</button>' : '';
+        var availabilityText = bot.ready ? '可对话' : (bot.unavailable_reason || statusText);
+        var chatClass = bot.ready ? 'btn btn-sm' : 'btn btn-sm btn-disabled';
+        var chatTitle = bot.ready ? '' : ' title="' + escapeHtml(availabilityText) + '"';
+        var editLabel = bot.ready ? '编辑' : '配置';
+        var editBtn = bot.can_edit ? '<button class="btn btn-primary btn-sm" onclick="openEditModal(' + bot.id + ')">' + editLabel + '</button>' : '';
         var deleteBtn = bot.can_edit ? '<button class="btn btn-danger btn-sm" onclick="deleteBot(' + bot.id + ')">删除</button>' : '';
         return '<div class="contact-item ai-bot-item">' +
             '<div class="avatar">' + escapeHtml(bot.is_system ? 'AI' : name.charAt(0)) + '</div>' +
             '<div class="info">' +
                 '<div class="name">' + escapeHtml(name) + '</div>' +
-                '<div class="remark">模型: ' + escapeHtml(bot.model || '-') + ' | ' + escapeHtml(sourceText) + '</div>' +
+                '<div class="remark">' + escapeHtml(configSummary(bot, sourceText)) + '</div>' +
                 '<div class="remark">' + escapeHtml(costText) + '</div>' +
                 '<div class="ai-pill-row">' +
-                    '<span class="ai-pill">' + (bot.is_system ? '内置免费' : '自定义') + '</span>' +
+                    '<span class="ai-pill">' + escapeHtml(botTypeText(bot)) + '</span>' +
                     '<span class="ai-pill">' + escapeHtml(kbText) + '</span>' +
-                    '<span class="ai-pill ' + statusClass + '">' + statusText + '</span>' +
+                    '<span class="ai-pill ' + statusClass + '">' + escapeHtml(availabilityText) + '</span>' +
                 '</div>' +
             '</div>' +
             '<div class="ai-bot-actions">' +
-                '<button class="btn btn-sm" onclick="chatWithBot(' + bot.user_id + ')"' + chatDisabled + '>聊天</button>' +
+                '<button class="' + chatClass + '" onclick="chatWithBot(' + bot.user_id + ')"' + chatTitle + '>聊天</button>' +
                 editBtn + deleteBtn +
             '</div>' +
         '</div>';
     }).join('');
 }
 
+function botTypeText(bot) {
+    if (bot.is_system) return '内置助手';
+    if (bot.api_source === 'system') return '系统 API 分身';
+    return '第三方分身';
+}
+
 function apiSourceText(bot) {
     if (bot.api_source === 'system') return bot.is_system ? '系统 API' : '系统 API 计费';
     return '第三方 API';
+}
+
+function configSummary(bot, sourceText) {
+    var model = bot.model || (bot.api_source === 'system' ? '系统默认模型' : '未配置模型');
+    var keyText = bot.api_source === 'third_party'
+        ? (bot.api_key_set ? 'Key 已保存' : 'Key 未保存')
+        : '使用系统凭据';
+    return '模型: ' + model + ' | ' + sourceText + ' | ' + keyText;
 }
 
 function usageText(bot) {
@@ -549,6 +566,13 @@ function renderTokenUsages() {
 }
 
 function chatWithBot(userID) {
+    var bot = bots.find(function(item) { return item.user_id === userID; });
+    if (bot && !bot.ready) {
+        var notice = document.getElementById('aiNotice');
+        notice.textContent = (bot.nickname || bot.username || 'AI助手') + '暂不可用：' + (bot.unavailable_reason || '配置不完整');
+        notice.classList.remove('hidden');
+        return;
+    }
     window.location.href = '/chat?peer=' + userID;
 }
 
