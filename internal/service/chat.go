@@ -442,7 +442,7 @@ func (s *ChatService) getOfflineUserMessages(userID uint) ([]model.Message, erro
 	var peers []peerRow
 	if err := model.DB.Model(&model.Message{}).
 		Select("from_user_id AS peer_id").
-		Where("to_user_id = ? AND from_user_id <> ?", userID, userID).
+		Where("group_id IS NULL AND to_user_id = ? AND from_user_id <> ?", userID, userID).
 		Group("from_user_id").
 		Find(&peers).Error; err != nil {
 		return nil, err
@@ -452,7 +452,7 @@ func (s *ChatService) getOfflineUserMessages(userID uint) ([]model.Message, erro
 	for _, peer := range peers {
 		lastReadID := s.readWatermark(userID, model.ConversationUser, peer.PeerID)
 		var msgs []model.Message
-		if err := preloadMessageRelations(model.DB.Where("to_user_id = ? AND from_user_id = ? AND id > ?", userID, peer.PeerID, lastReadID)).
+		if err := preloadMessageRelations(model.DB.Where("group_id IS NULL AND to_user_id = ? AND from_user_id = ? AND id > ?", userID, peer.PeerID, lastReadID)).
 			Order("id ASC").
 			Limit(offlineSyncBatchSize).
 			Find(&msgs).Error; err != nil {
@@ -504,7 +504,7 @@ func (s *ChatService) GetHistory(userID, peerID uint, page, pageSize int, afterI
 	var msgs []model.Message
 	var total int64
 
-	where := "(from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)"
+	where := "group_id IS NULL AND to_user_id IS NOT NULL AND ((from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?))"
 	args := []interface{}{userID, peerID, peerID, userID}
 
 	model.DB.Model(&model.Message{}).Where(where, args...).Count(&total)
@@ -608,7 +608,7 @@ func (s *ChatService) SearchMessagesWithParams(userID uint, params MessageSearch
 	case "all", "global":
 		query = query.Joins("LEFT JOIN group_members search_gm ON search_gm.group_id = messages.group_id AND search_gm.user_id = ?", userID).
 			Where(`(
-				(messages.to_user_id IS NOT NULL AND (messages.from_user_id = ? OR messages.to_user_id = ?))
+				(messages.group_id IS NULL AND messages.to_user_id IS NOT NULL AND (messages.from_user_id = ? OR messages.to_user_id = ?))
 				OR (messages.group_id IS NOT NULL AND search_gm.id IS NOT NULL AND messages.created_at >= search_gm.created_at)
 				OR (messages.to_user_id IS NULL AND messages.group_id IS NULL)
 			)`, userID, userID)
@@ -617,7 +617,7 @@ func (s *ChatService) SearchMessagesWithParams(userID uint, params MessageSearch
 			return nil, 0, errors.New("无效的搜索目标")
 		}
 		query = query.Where(
-			"(messages.from_user_id = ? AND messages.to_user_id = ?) OR (messages.from_user_id = ? AND messages.to_user_id = ?)",
+			"messages.group_id IS NULL AND messages.to_user_id IS NOT NULL AND ((messages.from_user_id = ? AND messages.to_user_id = ?) OR (messages.from_user_id = ? AND messages.to_user_id = ?))",
 			userID, params.TargetID, params.TargetID, userID,
 		)
 	case "group":
