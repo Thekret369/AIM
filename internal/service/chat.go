@@ -18,7 +18,10 @@ type ChatService struct {
 	AIResponder AIResponder
 }
 
-const offlineSyncBatchSize = 100
+const (
+	offlineSyncBatchSize = 100
+	messageRecallWindow  = 2 * time.Minute
+)
 
 type MessageSearchParams struct {
 	Scope     string
@@ -382,6 +385,67 @@ func (s *ChatService) Send(msg *model.Message) error {
 
 	preloadMessageRelations(model.DB).First(msg, msg.ID)
 
+	s.dispatchMessage(msg)
+	return nil
+}
+
+func (s *ChatService) RecallMessage(userID, messageID uint) (*model.Message, error) {
+	return s.recallMessageAt(userID, messageID, time.Now())
+}
+
+func (s *ChatService) recallMessageAt(userID, messageID uint, now time.Time) (*model.Message, error) {
+	if userID == 0 || messageID == 0 {
+		return nil, ErrMessageNotFound
+	}
+
+	var recalled model.Message
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var msg model.Message
+		if err := tx.First(&msg, messageID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
+			return err
+		}
+		if msg.FromUserID != userID {
+			return ErrMessageRecallForbidden
+		}
+		if msg.IsRecalled {
+			return ErrMessageAlreadyRecalled
+		}
+		if now.Sub(msg.CreatedAt) > messageRecallWindow {
+			return ErrMessageRecallExpired
+		}
+
+		recalledAt := now
+		updates := map[string]interface{}{
+			"is_recalled":   true,
+			"recalled_at":   recalledAt,
+			"content":       "",
+			"file_name":     "",
+			"file_size":     int64(0),
+			"thumbnail_url": "",
+			"mentions":      "",
+		}
+		if err := tx.Model(&model.Message{}).
+			Where("id = ? AND is_recalled = ?", messageID, false).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+		return preloadMessageRelations(tx).First(&recalled, messageID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	s.dispatchMessage(&recalled)
+	return &recalled, nil
+}
+
+func (s *ChatService) dispatchMessage(msg *model.Message) {
+	if s == nil || s.Hub == nil || msg == nil {
+		return
+	}
 	switch {
 	case msg.IsBroadcast():
 		s.Hub.Broadcast(msg)
@@ -397,7 +461,6 @@ func (s *ChatService) Send(msg *model.Message) error {
 			s.Hub.SendToUser(msg.FromUserID, msg)
 		}
 	}
-	return nil
 }
 
 // SyncOfflineMessages pushes unread messages after a user reconnects.

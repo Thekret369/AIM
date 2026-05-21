@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -159,6 +160,92 @@ func TestSendFromClientAcceptsFriendDirectMessage(t *testing.T) {
 	}
 	if msg.ID == 0 {
 		t.Fatal("expected direct message to be persisted")
+	}
+}
+
+func TestRecallMessageWithinWindow(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "recall_alice")
+	bob := createSecurityUser(t, "recall_bob")
+	createAcceptedFriendPair(t, alice.ID, bob.ID)
+
+	bobID := bob.ID
+	msg := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: alice.ID,
+		ToUserID:   &bobID,
+		Content:    "need recall",
+		FileName:   "keep.txt",
+		FileSize:   128,
+		Mentions:   "[1]",
+		CreatedAt:  time.Now().Add(-30 * time.Second),
+	}
+	if err := model.DB.Create(msg).Error; err != nil {
+		t.Fatalf("create recall message: %v", err)
+	}
+
+	recalled, err := chatSvc.recallMessageAt(alice.ID, msg.ID, msg.CreatedAt.Add(90*time.Second))
+	if err != nil {
+		t.Fatalf("recall message: %v", err)
+	}
+	if !recalled.IsRecalled || recalled.RecalledAt == nil {
+		t.Fatalf("expected recalled state, got %+v", recalled)
+	}
+	if recalled.Content != "" || recalled.FileName != "" || recalled.FileSize != 0 || recalled.Mentions != "" {
+		t.Fatalf("expected visible payload to be cleared, got %+v", recalled)
+	}
+}
+
+func TestRecallMessageRejectsNonSender(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "recall_owner")
+	bob := createSecurityUser(t, "recall_attacker")
+	createAcceptedFriendPair(t, alice.ID, bob.ID)
+
+	bobID := bob.ID
+	msg := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: alice.ID,
+		ToUserID:   &bobID,
+		Content:    "owner only",
+	}
+	if err := model.DB.Create(msg).Error; err != nil {
+		t.Fatalf("create recall message: %v", err)
+	}
+
+	if _, err := chatSvc.recallMessageAt(bob.ID, msg.ID, msg.CreatedAt.Add(time.Minute)); !errors.Is(err, ErrMessageRecallForbidden) {
+		t.Fatalf("expected forbidden recall error, got %v", err)
+	}
+}
+
+func TestRecallMessageRejectsExpiredMessage(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "recall_expired_alice")
+	bob := createSecurityUser(t, "recall_expired_bob")
+	createAcceptedFriendPair(t, alice.ID, bob.ID)
+
+	now := time.Now()
+	bobID := bob.ID
+	msg := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: alice.ID,
+		ToUserID:   &bobID,
+		Content:    "too old",
+		CreatedAt:  now.Add(-3 * time.Minute),
+	}
+	if err := model.DB.Create(msg).Error; err != nil {
+		t.Fatalf("create expired recall message: %v", err)
+	}
+
+	if _, err := chatSvc.recallMessageAt(alice.ID, msg.ID, now); !errors.Is(err, ErrMessageRecallExpired) {
+		t.Fatalf("expected expired recall error, got %v", err)
+	}
+	var stored model.Message
+	if err := model.DB.First(&stored, msg.ID).Error; err != nil {
+		t.Fatalf("load expired recall message: %v", err)
+	}
+	if stored.IsRecalled || stored.Content == "" {
+		t.Fatalf("expired recall should not mutate message, got %+v", stored)
 	}
 }
 
