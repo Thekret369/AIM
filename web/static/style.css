@@ -434,6 +434,28 @@ body {
 	color: var(--text-muted);
 	font-style: italic;
 }
+.msg-stream-placeholder {
+	color: var(--text-muted);
+}
+.msg-stream-cursor {
+	display: inline-block;
+	width: 6px;
+	height: 16px;
+	margin-left: 2px;
+	vertical-align: -2px;
+	border-radius: 2px;
+	background: currentColor;
+	animation: msg-stream-caret 1s steps(2, start) infinite;
+}
+.msg-stream-error {
+	margin-top: 4px;
+	color: var(--danger);
+	font-size: 12px;
+}
+@keyframes msg-stream-caret {
+	0%, 45% { opacity: 1; }
+	46%, 100% { opacity: 0; }
+}
 .quote-ref {
 	display: flex;
 	flex-direction: column;

@@ -82,13 +82,14 @@ async function api(method, path, body) {
 }
 
 // ========================================
-// WebSocket 连接 — 支持 chat/typing/read_receipt/status 四种消息类型
+// WebSocket 连接 — 支持 chat/typing/read_receipt/ai_stream/status 等消息类型
 // ========================================
 
 let ws = null;
 let onMessage = null;       // 回调: function(msg)  — chat 消息（已解包）
 let onTyping = null;        // 回调: function(payload)
 let onReadReceipt = null;   // 回调: function(payload)
+let onAIStream = null;      // 回调: function(payload)
 let onStatus = null;        // 回调: function(payload)
 let onWSAck = null;          // 回调: function(payload)
 let onWSError = null;        // 回调: function(payload)
@@ -136,6 +137,9 @@ function connectWS() {
                 break;
             case 'read_receipt':
                 if (onReadReceipt) onReadReceipt(payload);
+                break;
+            case 'ai_stream':
+                if (onAIStream) onAIStream(payload);
                 break;
             case 'status':
                 if (payload.is_online) {
