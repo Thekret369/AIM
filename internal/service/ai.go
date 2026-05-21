@@ -753,25 +753,43 @@ func (s *AIService) loadContextMessages(botID uint, source *model.Message, limit
 	if limit <= 0 {
 		limit = 12
 	}
-	var messages []model.Message
-
-	query := model.DB.Preload("FromUser").
-		Where("id <= ?", source.ID).
-		Order("id DESC").
-		Limit(limit)
 
 	if source.IsToUser() && source.ToUserID != nil {
-		query = query.Where(
-			"(from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
-			source.FromUserID, botID, botID, source.FromUserID,
-		)
-	} else if source.IsToGroup() && source.GroupID != nil {
-		query = query.Where("group_id = ?", *source.GroupID)
-	} else {
-		return nil, nil
+		return s.loadDirectContextMessages(botID, source.FromUserID, source.ID, limit)
 	}
+	if source.IsToGroup() && source.GroupID != nil {
+		return s.loadGroupContextMessages(*source.GroupID, source.ID, limit)
+	}
+	return nil, nil
+}
 
-	if err := query.Find(&messages).Error; err != nil {
+func (s *AIService) loadDirectContextMessages(botID, peerID, beforeOrEqualID uint, limit int) ([]model.Message, error) {
+	var messages []model.Message
+
+	err := model.DB.Preload("FromUser").
+		Where("id <= ? AND group_id IS NULL AND to_user_id IS NOT NULL", beforeOrEqualID).
+		Where(
+			"(from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
+			peerID, botID, botID, peerID,
+		).
+		Order("id DESC").
+		Limit(limit).
+		Find(&messages).Error
+	if err != nil {
+		return nil, err
+	}
+	reverseMessages(messages)
+	return messages, nil
+}
+
+func (s *AIService) loadGroupContextMessages(groupID, beforeOrEqualID uint, limit int) ([]model.Message, error) {
+	var messages []model.Message
+
+	if err := model.DB.Preload("FromUser").
+		Where("id <= ? AND group_id = ?", beforeOrEqualID, groupID).
+		Order("id DESC").
+		Limit(limit).
+		Find(&messages).Error; err != nil {
 		return nil, err
 	}
 	reverseMessages(messages)

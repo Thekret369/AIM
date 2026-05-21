@@ -164,6 +164,66 @@ func TestAIDirectConcurrentRepliesStayWithSourceMessage(t *testing.T) {
 	}
 }
 
+func TestAIDirectContextIsIsolatedPerUser(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	userA := createSecurityUser(t, "ai_context_user_a")
+	userB := createSecurityUser(t, "ai_context_user_b")
+	bot := createAIUser(t, "ai_context_bot")
+
+	toBot := bot.ID
+	toUserA := userA.ID
+	toUserB := userB.ID
+	history := []*model.Message{
+		{Type: model.MsgText, FromUserID: userA.ID, ToUserID: &toBot, Content: "user-a-private-context"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &toUserA, Content: "assistant-a-private-context"},
+		{Type: model.MsgText, FromUserID: userB.ID, ToUserID: &toBot, Content: "user-b-private-context"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &toUserB, Content: "assistant-b-private-context"},
+	}
+	for _, msg := range history {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("seed ai direct history: %v", err)
+		}
+	}
+
+	fake := &fakeAIClient{reply: "isolated reply", calls: make(chan ai.ChatRequest, 2)}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{
+		MaxContextMessages: 8,
+		Timeout:            time.Second,
+	})
+
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: userA.ID,
+		ToUserID:   &toBot,
+		Content:    "current question from user a",
+	}); err != nil {
+		t.Fatalf("send user a ai message: %v", err)
+	}
+	reqA := waitAIRequest(t, fake.calls)
+	if !promptContains(reqA, "user-a-private-context") || !promptContains(reqA, "assistant-a-private-context") {
+		t.Fatalf("expected user a prompt to include only user a history, got %+v", reqA.Messages)
+	}
+	if promptContains(reqA, "user-b-private-context") || promptContains(reqA, "assistant-b-private-context") {
+		t.Fatalf("expected user a prompt to exclude user b history, got %+v", reqA.Messages)
+	}
+
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: userB.ID,
+		ToUserID:   &toBot,
+		Content:    "current question from user b",
+	}); err != nil {
+		t.Fatalf("send user b ai message: %v", err)
+	}
+	reqB := waitAIRequest(t, fake.calls)
+	if !promptContains(reqB, "user-b-private-context") || !promptContains(reqB, "assistant-b-private-context") {
+		t.Fatalf("expected user b prompt to include only user b history, got %+v", reqB.Messages)
+	}
+	if promptContains(reqB, "user-a-private-context") || promptContains(reqB, "assistant-a-private-context") {
+		t.Fatalf("expected user b prompt to exclude user a history, got %+v", reqB.Messages)
+	}
+}
+
 func TestAIUserGroupMentionCreatesReply(t *testing.T) {
 	chatSvc, groupSvc := setupChatSecurityTest(t)
 	owner := createSecurityUser(t, "ai_group_owner")
@@ -619,6 +679,15 @@ func lastAIUserMessage(req ai.ChatRequest) string {
 		}
 	}
 	return ""
+}
+
+func promptContains(req ai.ChatRequest, text string) bool {
+	for _, msg := range req.Messages {
+		if strings.Contains(msg.Content, text) {
+			return true
+		}
+	}
+	return false
 }
 
 func assertNoAIRequest(t *testing.T, calls <-chan ai.ChatRequest) {
