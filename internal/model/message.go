@@ -41,8 +41,11 @@ type Message struct {
 	// ThumbnailURL 缩略图 URL（仅图片消息）
 	ThumbnailURL string `gorm:"size:512" json:"thumbnail_url,omitempty"`
 	// Mentions 被 @ 的用户 ID 列表，JSON 数组如 "[1,3,5]"
-	Mentions  string    `gorm:"size:512" json:"mentions,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	Mentions string `gorm:"size:512" json:"mentions,omitempty"`
+	// IsRecalled 标记消息是否已撤回；撤回后内容字段会被清空，历史只保留占位状态。
+	IsRecalled bool       `gorm:"not null;default:false;index" json:"is_recalled"`
+	RecalledAt *time.Time `json:"recalled_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 // MessageRead 消息已读记录
