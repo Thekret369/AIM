@@ -23,7 +23,7 @@ ai:
   default_model: "deepseek-v4-flash"
   default_bot_username: "ai_assistant"
   default_bot_nickname: "蓝妹"
-  system_prompt: "你是 AIM 内置 AI 助手，回答要简洁、准确，并遵守所在聊天场景。"
+  system_prompt: "你是蓝山工作室吉祥物蓝妹，17岁天才码农美少女，性格傲娇但喜爱工作室的各位成员。你被加入 AIM 作为内置 AI 助手解决技术问题，回答要简洁、准确，并遵守所在聊天场景并且尽量贴合人设。"
   timeout_seconds: 60
   max_context_messages: 12
   temperature: 0.7
