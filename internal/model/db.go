@@ -45,6 +45,7 @@ func InitDB(dsn string) error {
 		&GroupMember{},
 		&Announcement{},
 		&MessageRead{},
+		&MessageDeletion{},
 		&AIBot{},
 		&AIKnowledgeBase{},
 		&AIKnowledgeDocument{},
@@ -73,7 +74,7 @@ func EnsureIndexes() error {
 	if DB == nil {
 		return errors.New("database is not initialized")
 	}
-	if err := DB.AutoMigrate(&SchemaMigration{}); err != nil {
+	if err := DB.AutoMigrate(&SchemaMigration{}, &MessageDeletion{}); err != nil {
 		return err
 	}
 	for _, migration := range schemaMigrations() {
@@ -151,6 +152,14 @@ func schemaMigrations() []schemaMigration {
 				"CREATE INDEX IF NOT EXISTS idx_ai_knowledge_documents_kb_status ON ai_knowledge_documents (knowledge_base_id, status)",
 				"CREATE INDEX IF NOT EXISTS idx_ai_token_usages_user_created ON ai_token_usages (user_id, created_at)",
 				"CREATE INDEX IF NOT EXISTS idx_ai_token_usages_bot_created ON ai_token_usages (bot_id, created_at)",
+			},
+		},
+		{
+			Version: "2026052201",
+			Name:    "message personal deletion visibility",
+			Statements: []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS idx_message_deletions_user_message ON message_deletions (user_id, message_id)",
+				"CREATE INDEX IF NOT EXISTS idx_message_deletions_message_user ON message_deletions (message_id, user_id)",
 			},
 		},
 	}

@@ -37,6 +37,7 @@ func setupChatSecurityTest(t *testing.T) (*ChatService, *GroupService) {
 		&model.GroupMember{},
 		&model.Announcement{},
 		&model.MessageRead{},
+		&model.MessageDeletion{},
 		&model.AIBot{},
 		&model.AIKnowledgeBase{},
 		&model.AIKnowledgeDocument{},
@@ -246,6 +247,110 @@ func TestRecallMessageRejectsExpiredMessage(t *testing.T) {
 	}
 	if stored.IsRecalled || stored.Content == "" {
 		t.Fatalf("expired recall should not mutate message, got %+v", stored)
+	}
+}
+
+func TestDeleteMessageForUserHidesDirectOnlyForThatUser(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "delete_direct_alice")
+	bob := createSecurityUser(t, "delete_direct_bob")
+	createAcceptedFriendPair(t, alice.ID, bob.ID)
+
+	bobID := bob.ID
+	aliceID := alice.ID
+	removeForBob := &model.Message{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &bobID, Content: "delete direct only for bob"}
+	keepVisible := &model.Message{Type: model.MsgText, FromUserID: bob.ID, ToUserID: &aliceID, Content: "direct still visible"}
+	for _, msg := range []*model.Message{removeForBob, keepVisible} {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("create direct message: %v", err)
+		}
+	}
+
+	if err := chatSvc.DeleteMessageForUser(bob.ID, removeForBob.ID); err != nil {
+		t.Fatalf("delete direct message for bob: %v", err)
+	}
+	if err := chatSvc.DeleteMessageForUser(bob.ID, removeForBob.ID); err != nil {
+		t.Fatalf("repeat delete should be idempotent: %v", err)
+	}
+
+	bobMsgs, bobTotal, err := chatSvc.GetHistory(bob.ID, alice.ID, 1, 20, 0)
+	if err != nil {
+		t.Fatalf("get bob history: %v", err)
+	}
+	if bobTotal != 1 || len(bobMsgs) != 1 || bobMsgs[0].ID == removeForBob.ID {
+		t.Fatalf("expected bob history to hide deleted message, total=%d msgs=%+v", bobTotal, bobMsgs)
+	}
+
+	aliceMsgs, aliceTotal, err := chatSvc.GetHistory(alice.ID, bob.ID, 1, 20, 0)
+	if err != nil {
+		t.Fatalf("get alice history: %v", err)
+	}
+	if aliceTotal != 2 || len(aliceMsgs) != 2 {
+		t.Fatalf("alice should still see both messages, total=%d msgs=%+v", aliceTotal, aliceMsgs)
+	}
+}
+
+func TestDeleteMessageForUserHidesGroupOnlyForThatMember(t *testing.T) {
+	chatSvc, groupSvc := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "delete_group_owner")
+	member := createSecurityUser(t, "delete_group_member")
+	group, err := groupSvc.CreateGroup("delete_group", "", owner.ID)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := groupSvc.JoinGroup(group.ID, member.ID); err != nil {
+		t.Fatalf("join group: %v", err)
+	}
+
+	removeForMember := &model.Message{Type: model.MsgText, FromUserID: owner.ID, GroupID: &group.ID, Content: "delete group only for member"}
+	keepVisible := &model.Message{Type: model.MsgText, FromUserID: member.ID, GroupID: &group.ID, Content: "group still visible"}
+	for _, msg := range []*model.Message{removeForMember, keepVisible} {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("create group message: %v", err)
+		}
+	}
+
+	if err := chatSvc.DeleteMessageForUser(member.ID, removeForMember.ID); err != nil {
+		t.Fatalf("delete group message for member: %v", err)
+	}
+
+	memberMsgs, memberTotal, err := chatSvc.GetGroupHistory(member.ID, group.ID, 1, 20, 0)
+	if err != nil {
+		t.Fatalf("get member group history: %v", err)
+	}
+	if memberTotal != 1 || len(memberMsgs) != 1 || memberMsgs[0].ID == removeForMember.ID {
+		t.Fatalf("expected member history to hide deleted group message, total=%d msgs=%+v", memberTotal, memberMsgs)
+	}
+
+	ownerMsgs, ownerTotal, err := chatSvc.GetGroupHistory(owner.ID, group.ID, 1, 20, 0)
+	if err != nil {
+		t.Fatalf("get owner group history: %v", err)
+	}
+	if ownerTotal != 2 || len(ownerMsgs) != 2 {
+		t.Fatalf("owner should still see both group messages, total=%d msgs=%+v", ownerTotal, ownerMsgs)
+	}
+}
+
+func TestDeleteMessageRejectsOutOfScopeUser(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "delete_scope_alice")
+	bob := createSecurityUser(t, "delete_scope_bob")
+	charlie := createSecurityUser(t, "delete_scope_charlie")
+
+	bobID := bob.ID
+	msg := &model.Message{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &bobID, Content: "not charlie message"}
+	if err := model.DB.Create(msg).Error; err != nil {
+		t.Fatalf("create direct message: %v", err)
+	}
+
+	if err := chatSvc.DeleteMessageForUser(charlie.ID, msg.ID); !errors.Is(err, ErrMessageDeleteForbidden) {
+		t.Fatalf("expected delete forbidden, got %v", err)
+	}
+
+	var count int64
+	model.DB.Model(&model.MessageDeletion{}).Where("user_id = ? AND message_id = ?", charlie.ID, msg.ID).Count(&count)
+	if count != 0 {
+		t.Fatalf("out-of-scope delete created deletion row, count=%d", count)
 	}
 }
 
@@ -554,6 +659,43 @@ func TestSearchMessagesUserScope(t *testing.T) {
 	}
 }
 
+func TestSearchMessagesExcludesDeletedForCurrentUser(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	alice := createSecurityUser(t, "search_delete_alice")
+	bob := createSecurityUser(t, "search_delete_bob")
+	createAcceptedFriendPair(t, alice.ID, bob.ID)
+
+	bobID := bob.ID
+	matches := []*model.Message{
+		{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &bobID, Content: "delete-search needle hidden"},
+		{Type: model.MsgText, FromUserID: alice.ID, ToUserID: &bobID, Content: "delete-search needle visible"},
+	}
+	for _, msg := range matches {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("create search message: %v", err)
+		}
+	}
+	if err := chatSvc.DeleteMessageForUser(bob.ID, matches[0].ID); err != nil {
+		t.Fatalf("delete message for bob: %v", err)
+	}
+
+	got, total, err := chatSvc.SearchMessages(bob.ID, "user", alice.ID, "delete-search needle", 1, 20)
+	if err != nil {
+		t.Fatalf("search bob messages: %v", err)
+	}
+	if total != 1 || len(got) != 1 || got[0].ID == matches[0].ID {
+		t.Fatalf("expected bob search to hide deleted message, total=%d got=%+v", total, got)
+	}
+
+	aliceGot, aliceTotal, err := chatSvc.SearchMessages(alice.ID, "user", bob.ID, "delete-search needle", 1, 20)
+	if err != nil {
+		t.Fatalf("search alice messages: %v", err)
+	}
+	if aliceTotal != 2 || len(aliceGot) != 2 {
+		t.Fatalf("alice search should still see both messages, total=%d got=%+v", aliceTotal, aliceGot)
+	}
+}
+
 func TestSearchMessagesUserScopeIsolatesAIDirectMessagesPerUser(t *testing.T) {
 	chatSvc, _ := setupChatSecurityTest(t)
 	alice := createSecurityUser(t, "search_ai_alice")
@@ -855,6 +997,40 @@ func TestOfflineSyncMessagesUseReadWatermarks(t *testing.T) {
 	}
 	if !got[second.ID] || !got[groupMsg.ID] {
 		t.Fatalf("expected unread direct and group messages, got ids=%v", got)
+	}
+}
+
+func TestOfflineSyncExcludesDeletedMessages(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	sender := createSecurityUser(t, "offline_delete_sender")
+	receiver := createSecurityUser(t, "offline_delete_receiver")
+	createAcceptedFriendPair(t, sender.ID, receiver.ID)
+
+	receiverID := receiver.ID
+	deleted := &model.Message{Type: model.MsgText, FromUserID: sender.ID, ToUserID: &receiverID, Content: "offline deleted"}
+	visible := &model.Message{Type: model.MsgText, FromUserID: sender.ID, ToUserID: &receiverID, Content: "offline visible"}
+	for _, msg := range []*model.Message{deleted, visible} {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("create offline message: %v", err)
+		}
+	}
+	if err := chatSvc.DeleteMessageForUser(receiver.ID, deleted.ID); err != nil {
+		t.Fatalf("delete offline message: %v", err)
+	}
+
+	msgs, err := chatSvc.getOfflineSyncMessages(receiver.ID)
+	if err != nil {
+		t.Fatalf("get offline sync messages: %v", err)
+	}
+	got := make(map[uint]bool)
+	for _, msg := range msgs {
+		got[msg.ID] = true
+	}
+	if got[deleted.ID] {
+		t.Fatalf("deleted message was included in offline sync")
+	}
+	if !got[visible.ID] {
+		t.Fatalf("visible unread message missing from offline sync, got ids=%v", got)
 	}
 }
 

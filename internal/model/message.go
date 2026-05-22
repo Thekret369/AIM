@@ -60,6 +60,16 @@ type MessageRead struct {
 	LastReadMsgID    uint   `gorm:"not null" json:"last_read_msg_id"`    // 已读到的最后一条消息 ID
 }
 
+// MessageDeletion 记录某个用户对某条消息的个人软删除状态。
+// 删除后仅该用户查询历史、搜索和离线同步时不可见，不影响其他会话成员。
+type MessageDeletion struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"not null;index;uniqueIndex:idx_message_deletions_user_message" json:"user_id"`
+	MessageID uint      `gorm:"not null;index;uniqueIndex:idx_message_deletions_user_message" json:"message_id"`
+	Message   Message   `gorm:"foreignKey:MessageID" json:"message,omitempty"`
+	DeletedAt time.Time `gorm:"not null" json:"deleted_at"`
+}
+
 // IsToUser 是否为发给特定用户的单聊消息
 func (m *Message) IsToUser() bool {
 	return m.ToUserID != nil
