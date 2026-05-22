@@ -266,6 +266,21 @@ var msgStore = (function() {
         });
     }
 
+    // 删除当前用户本地缓存中的单条消息；服务端仍以个人软删除记录为准。
+    function deleteMessage(convKey, msgId) {
+        if (!msgId) return Promise.resolve();
+        return open().then(function(db) {
+            return new Promise(function(resolve, reject) {
+                var tx = db.transaction('messages', 'readwrite');
+                var store = tx.objectStore('messages');
+                var scopedKey = scopeConvKey(convKey);
+                store.delete(makeKey(scopedKey, msgId));
+                tx.oncomplete = function() { resolve(); };
+                tx.onerror = function(e) { reject(e.target.error); };
+            });
+        });
+    }
+
     // 获取所有有缓存的会话 key 列表（用于侧边栏初始化）
     function getCachedConvKeys() {
         return open().then(function(db) {
@@ -302,6 +317,7 @@ var msgStore = (function() {
         setLastMsgID: setLastMsgID,
         markRead: markRead,
         clearConversation: clearConversation,
+        deleteMessage: deleteMessage,
         getCachedConvKeys: getCachedConvKeys
     };
 })();

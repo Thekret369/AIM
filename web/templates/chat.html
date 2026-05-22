@@ -523,6 +523,12 @@ function createTab(key, type, targetId, name) {
             recallMessage(key, parseInt(recallBtn.dataset.msgId || '0', 10), recallBtn);
             return;
         }
+        var deleteBtn = e.target.closest('.delete-message-btn');
+        if (deleteBtn) {
+            e.preventDefault();
+            deleteMessageForMe(key, parseInt(deleteBtn.dataset.msgId || '0', 10), deleteBtn);
+            return;
+        }
         var quoteBtn = e.target.closest('.quote-reply-btn');
         if (quoteBtn) {
             e.preventDefault();
@@ -1174,10 +1180,13 @@ function renderOneMessage(msg) {
     var recallAction = canRecallMessage(msg)
         ? '<button class="recall-message-btn" type="button" data-msg-id="' + msg.id + '" title="2 分钟内可撤回">撤回</button>'
         : '';
+    var deleteAction = msg.id
+        ? '<button class="delete-message-btn" type="button" data-msg-id="' + msg.id + '" title="仅从我的聊天记录中删除">删除</button>'
+        : '';
     var html = '<div class="msg ' + cls + '" data-msg-id="' + msg.id + '">' +
         '<div class="bubble">' +
             '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" class="text-link">' + escapeHtml(name) + '</a>' +
-            (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + quoteAction + recallAction + '</div>' +
+            (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + quoteAction + recallAction + deleteAction + '</div>' +
             quoteHTML +
             body +
         '</div>' +
@@ -1268,6 +1277,59 @@ async function recallMessage(key, msgId, buttonEl) {
     } catch(e) {
         renderSendFailure(key, null, e.message || '撤回失败');
         if (buttonEl) buttonEl.disabled = false;
+    }
+}
+
+async function deleteMessageForMe(key, msgId, buttonEl) {
+    var tab = chatTabs.get(key);
+    var msg = findTabMessage(tab, msgId);
+    if (!tab || !msg || !msgId) return;
+    if (!confirm('确认删除这条聊天记录？删除后仅自己不可见。')) return;
+    if (buttonEl) buttonEl.disabled = true;
+
+    try {
+        await api('DELETE', '/messages/' + msgId);
+        if (typeof msgStore !== 'undefined' && typeof msgStore.deleteMessage === 'function') {
+            await msgStore.deleteMessage(key, msgId);
+        }
+        removeMessageFromTab(key, msgId);
+    } catch(e) {
+        renderSendFailure(key, null, e.message || '删除失败');
+        if (buttonEl) buttonEl.disabled = false;
+    }
+}
+
+function removeMessageFromTab(key, msgId) {
+    var tab = chatTabs.get(key);
+    if (!tab || !msgId) return;
+
+    var removed = null;
+    tab.messages = tab.messages.filter(function(msg) {
+        if (msg.id === msgId) {
+            removed = msg;
+            return false;
+        }
+        return true;
+    });
+    if (!removed) return;
+
+    messageReadBy.delete(msgId);
+    var quoted = quotedMessageByTab.get(key);
+    if (quoted && quoted.id === msgId) clearQuoteReply(key);
+    renderAllMessages(tab);
+
+    var latest = lastMessages.get(key);
+    if (latest && latest.id === msgId) {
+        lastMessages.delete(key);
+        lastTimestamps.delete(key);
+        loadLastMessages().then(function() {
+            sortConversations();
+            renderSidebar();
+            updateOnlineDots();
+        });
+    } else {
+        renderSidebar();
+        updateOnlineDots();
     }
 }
 
