@@ -396,6 +396,82 @@ func (s *ChatService) RecallMessage(userID, messageID uint) (*model.Message, err
 	return s.recallMessageAt(userID, messageID, time.Now())
 }
 
+func (s *ChatService) DeleteMessageForUser(userID, messageID uint) error {
+	return s.deleteMessageForUserAt(userID, messageID, time.Now())
+}
+
+func (s *ChatService) deleteMessageForUserAt(userID, messageID uint, now time.Time) error {
+	if userID == 0 || messageID == 0 {
+		return ErrMessageNotFound
+	}
+
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		var msg model.Message
+		if err := tx.First(&msg, messageID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMessageNotFound
+			}
+			return err
+		}
+
+		if alreadyDeletedForUser(tx, userID, messageID) {
+			return nil
+		}
+		if err := s.ensureMessageDeletableByUser(tx, &msg, userID); err != nil {
+			return err
+		}
+
+		deletion := model.MessageDeletion{
+			UserID:    userID,
+			MessageID: messageID,
+			DeletedAt: now,
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "message_id"}},
+			DoNothing: true,
+		}).Create(&deletion).Error
+	})
+}
+
+func alreadyDeletedForUser(tx *gorm.DB, userID, messageID uint) bool {
+	var count int64
+	if err := tx.Model(&model.MessageDeletion{}).
+		Where("user_id = ? AND message_id = ?", userID, messageID).
+		Count(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
+}
+
+func (s *ChatService) ensureMessageDeletableByUser(tx *gorm.DB, msg *model.Message, userID uint) error {
+	if msg == nil || userID == 0 {
+		return ErrMessageDeleteForbidden
+	}
+
+	switch {
+	case msg.IsToUser():
+		if msg.ToUserID != nil && (msg.FromUserID == userID || *msg.ToUserID == userID) {
+			return nil
+		}
+	case msg.IsToGroup():
+		if msg.GroupID == nil {
+			return ErrMessageDeleteForbidden
+		}
+		var member model.GroupMember
+		if err := tx.Where("group_id = ? AND user_id = ?", *msg.GroupID, userID).First(&member).Error; err != nil {
+			return ErrMessageDeleteForbidden
+		}
+		if msg.CreatedAt.Before(member.CreatedAt) {
+			return ErrMessageDeleteForbidden
+		}
+		return nil
+	case msg.IsBroadcast():
+		return nil
+	}
+
+	return ErrMessageDeleteForbidden
+}
+
 func (s *ChatService) recallMessageAt(userID, messageID uint, now time.Time) (*model.Message, error) {
 	if userID == 0 || messageID == 0 {
 		return nil, ErrMessageNotFound
@@ -506,7 +582,7 @@ func (s *ChatService) getOfflineUserMessages(userID uint) ([]model.Message, erro
 		PeerID uint
 	}
 	var peers []peerRow
-	if err := model.DB.Model(&model.Message{}).
+	if err := visibleMessagesForUser(model.DB.Model(&model.Message{}), userID).
 		Select("from_user_id AS peer_id").
 		Where("group_id IS NULL AND to_user_id = ? AND from_user_id <> ?", userID, userID).
 		Group("from_user_id").
@@ -518,7 +594,8 @@ func (s *ChatService) getOfflineUserMessages(userID uint) ([]model.Message, erro
 	for _, peer := range peers {
 		lastReadID := s.readWatermark(userID, model.ConversationUser, peer.PeerID)
 		var msgs []model.Message
-		if err := preloadMessageRelations(model.DB.Where("group_id IS NULL AND to_user_id = ? AND from_user_id = ? AND id > ?", userID, peer.PeerID, lastReadID)).
+		db := visibleMessagesForUser(model.DB.Where("group_id IS NULL AND to_user_id = ? AND from_user_id = ? AND id > ?", userID, peer.PeerID, lastReadID), userID)
+		if err := preloadVisibleMessageRelations(db, userID).
 			Order("id ASC").
 			Limit(offlineSyncBatchSize).
 			Find(&msgs).Error; err != nil {
@@ -539,7 +616,8 @@ func (s *ChatService) getOfflineGroupMessages(userID uint) ([]model.Message, err
 	for _, member := range memberships {
 		lastReadID := s.readWatermark(userID, model.ConversationGroup, member.GroupID)
 		var msgs []model.Message
-		if err := preloadMessageRelations(model.DB.Where("group_id = ? AND from_user_id <> ? AND id > ? AND created_at >= ?", member.GroupID, userID, lastReadID, member.CreatedAt)).
+		db := visibleMessagesForUser(model.DB.Where("group_id = ? AND from_user_id <> ? AND id > ? AND created_at >= ?", member.GroupID, userID, lastReadID, member.CreatedAt), userID)
+		if err := preloadVisibleMessageRelations(db, userID).
 			Order("id ASC").
 			Limit(offlineSyncBatchSize).
 			Find(&msgs).Error; err != nil {
@@ -566,6 +644,24 @@ func preloadMessageRelations(db *gorm.DB) *gorm.DB {
 		Preload("QuoteMessage.FromUser")
 }
 
+func preloadVisibleMessageRelations(db *gorm.DB, userID uint) *gorm.DB {
+	return db.Preload("FromUser").
+		Preload("QuoteMessage", func(tx *gorm.DB) *gorm.DB {
+			return visibleMessagesForUser(tx, userID)
+		}).
+		Preload("QuoteMessage.FromUser")
+}
+
+func visibleMessagesForUser(db *gorm.DB, userID uint) *gorm.DB {
+	if userID == 0 {
+		return db
+	}
+	return db.Where(
+		"NOT EXISTS (SELECT 1 FROM message_deletions md WHERE md.message_id = messages.id AND md.user_id = ?)",
+		userID,
+	)
+}
+
 func (s *ChatService) GetHistory(userID, peerID uint, page, pageSize int, afterID uint) ([]model.Message, int64, error) {
 	var msgs []model.Message
 	var total int64
@@ -573,17 +669,17 @@ func (s *ChatService) GetHistory(userID, peerID uint, page, pageSize int, afterI
 	where := "group_id IS NULL AND to_user_id IS NOT NULL AND ((from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?))"
 	args := []interface{}{userID, peerID, peerID, userID}
 
-	model.DB.Model(&model.Message{}).Where(where, args...).Count(&total)
+	visibleMessagesForUser(model.DB.Model(&model.Message{}).Where(where, args...), userID).Count(&total)
 
-	db := model.DB.Where(where, args...)
+	db := visibleMessagesForUser(model.DB.Where(where, args...), userID)
 	if afterID > 0 {
-		err := preloadMessageRelations(db.Where("id > ?", afterID)).
+		err := preloadVisibleMessageRelations(db.Where("id > ?", afterID), userID).
 			Order("id ASC").Find(&msgs).Error
 		if err != nil {
 			return nil, 0, err
 		}
 	} else {
-		err := preloadMessageRelations(db).
+		err := preloadVisibleMessageRelations(db, userID).
 			Order("created_at DESC").
 			Offset((page - 1) * pageSize).
 			Limit(pageSize).
@@ -607,17 +703,17 @@ func (s *ChatService) GetGroupHistory(userID, groupID uint, page, pageSize int, 
 	baseWhere := "group_id = ? AND created_at >= ?"
 	baseArgs := []interface{}{groupID, member.CreatedAt}
 
-	model.DB.Model(&model.Message{}).Where(baseWhere, baseArgs...).Count(&total)
+	visibleMessagesForUser(model.DB.Model(&model.Message{}).Where(baseWhere, baseArgs...), userID).Count(&total)
 
-	db := model.DB.Where(baseWhere, baseArgs...)
+	db := visibleMessagesForUser(model.DB.Where(baseWhere, baseArgs...), userID)
 	if afterID > 0 {
-		err := preloadMessageRelations(db.Where("id > ?", afterID)).
+		err := preloadVisibleMessageRelations(db.Where("id > ?", afterID), userID).
 			Order("id ASC").Find(&msgs).Error
 		if err != nil {
 			return nil, 0, err
 		}
 	} else {
-		err := preloadMessageRelations(db).
+		err := preloadVisibleMessageRelations(db, userID).
 			Order("created_at DESC").
 			Offset((page - 1) * pageSize).
 			Limit(pageSize).
@@ -654,7 +750,7 @@ func (s *ChatService) SearchMessagesWithParams(userID uint, params MessageSearch
 		params.PageSize = 50
 	}
 
-	query := model.DB.Model(&model.Message{})
+	query := visibleMessagesForUser(model.DB.Model(&model.Message{}), userID)
 	if params.Keyword != "" {
 		like := "%" + escapeLikePattern(strings.ToLower(params.Keyword)) + "%"
 		query = query.Where("(LOWER(messages.content) LIKE ? ESCAPE '\\' OR LOWER(messages.file_name) LIKE ? ESCAPE '\\')", like, like)
@@ -707,7 +803,7 @@ func (s *ChatService) SearchMessagesWithParams(userID uint, params MessageSearch
 	}
 
 	var msgs []model.Message
-	if err := preloadMessageRelations(query).
+	if err := preloadVisibleMessageRelations(query, userID).
 		Order("messages.created_at DESC, messages.id DESC").
 		Offset((params.Page - 1) * params.PageSize).
 		Limit(params.PageSize).
@@ -778,15 +874,15 @@ func (s *ChatService) getGroupMember(groupID, userID uint) (*model.GroupMember, 
 	return &member, nil
 }
 
-func (s *ChatService) GetBroadcastHistory(page, pageSize int) ([]model.Message, int64, error) {
+func (s *ChatService) GetBroadcastHistory(userID uint, page, pageSize int) ([]model.Message, int64, error) {
 	var msgs []model.Message
 	var total int64
 
-	query := model.DB.Model(&model.Message{}).
+	query := visibleMessagesForUser(model.DB.Model(&model.Message{}), userID).
 		Where("to_user_id IS NULL AND group_id IS NULL")
 	query.Count(&total)
 
-	if err := preloadMessageRelations(query).
+	if err := preloadVisibleMessageRelations(query, userID).
 		Order("created_at DESC").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).

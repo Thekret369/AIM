@@ -424,6 +424,19 @@ body {
 	cursor: default;
 	opacity: 0.6;
 }
+.delete-message-btn {
+	margin-left: 8px;
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 11px;
+	cursor: pointer;
+}
+.delete-message-btn:hover { color: var(--danger); }
+.delete-message-btn:disabled {
+	cursor: default;
+	opacity: 0.6;
+}
 .chat-messages .msg.recalled .bubble,
 .chat-messages .msg.recalled.from-me .bubble {
 	border: 1px dashed var(--border);

@@ -110,10 +110,11 @@ func (h *ChatHandler) GetGroupHistory(c *gin.Context) {
 
 // GetBroadcastHistory 获取广播消息历史
 func (h *ChatHandler) GetBroadcastHistory(c *gin.Context) {
+	userID := c.GetUint("user_id")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 
-	msgs, total, err := h.Svc.GetBroadcastHistory(page, pageSize)
+	msgs, total, err := h.Svc.GetBroadcastHistory(userID, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -138,11 +139,38 @@ func (h *ChatHandler) RecallMessage(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": msg})
 }
 
+// DeleteMessage 对当前用户软删除一条消息，删除后仅自己不可见。
+func (h *ChatHandler) DeleteMessage(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	messageID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || messageID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的消息 ID"})
+		return
+	}
+
+	if err := h.Svc.DeleteMessageForUser(userID, uint(messageID)); err != nil {
+		c.JSON(deleteMessageStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message_id": uint(messageID), "deleted": true})
+}
+
 func recallMessageStatus(err error) int {
 	switch {
 	case errors.Is(err, service.ErrMessageNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, service.ErrMessageRecallForbidden):
+		return http.StatusForbidden
+	default:
+		return http.StatusBadRequest
+	}
+}
+
+func deleteMessageStatus(err error) int {
+	switch {
+	case errors.Is(err, service.ErrMessageNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, service.ErrMessageDeleteForbidden):
 		return http.StatusForbidden
 	default:
 		return http.StatusBadRequest
