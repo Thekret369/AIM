@@ -10,6 +10,7 @@ import (
 
 	"AIM/internal/model"
 	"AIM/pkg/ai"
+	appcrypto "AIM/pkg/crypto"
 )
 
 type fakeAIClient struct {
@@ -364,6 +365,64 @@ func TestAIUserGroupMentionCreatesReply(t *testing.T) {
 	}
 }
 
+func TestAIUserGroupContextOnlyUsesCurrentMentionThread(t *testing.T) {
+	chatSvc, groupSvc := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_group_context_owner")
+	member := createSecurityUser(t, "ai_group_context_member")
+	other := createSecurityUser(t, "ai_group_context_other")
+	bot := createAIUser(t, "ai_group_context_bot")
+
+	group, err := groupSvc.CreateGroup("ai_group_context", "", owner.ID)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	for _, uid := range []uint{member.ID, other.ID, bot.ID} {
+		if err := groupSvc.JoinGroup(group.ID, uid); err != nil {
+			t.Fatalf("join group member %d: %v", uid, err)
+		}
+	}
+
+	seed := []*model.Message{
+		{Type: model.MsgText, FromUserID: other.ID, GroupID: &group.ID, Content: "@ai_group_context_bot other secret", Mentions: fmt.Sprintf("[%d]", bot.ID)},
+		{Type: model.MsgText, FromUserID: member.ID, GroupID: &group.ID, Content: "member unrelated group chatter"},
+		{Type: model.MsgText, FromUserID: member.ID, GroupID: &group.ID, Content: "@ai_group_context_bot prior question", Mentions: fmt.Sprintf("[%d]", bot.ID)},
+		{Type: model.MsgText, FromUserID: bot.ID, GroupID: &group.ID, Content: "prior answer to member", Mentions: fmt.Sprintf("[%d]", member.ID)},
+		{Type: model.MsgText, FromUserID: bot.ID, GroupID: &group.ID, Content: "answer to other", Mentions: fmt.Sprintf("[%d]", other.ID)},
+	}
+	for _, msg := range seed {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("seed group ai context: %v", err)
+		}
+	}
+
+	fake := &fakeAIClient{reply: "isolated group reply", calls: make(chan ai.ChatRequest, 1)}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{
+		MaxContextMessages: 8,
+		Timeout:            time.Second,
+	})
+
+	source := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: member.ID,
+		GroupID:    &group.ID,
+		Content:    "@ai_group_context_bot current question",
+		Mentions:   fmt.Sprintf("[%d]", bot.ID),
+	}
+	if err := chatSvc.SendFromClient(source); err != nil {
+		t.Fatalf("send group ai mention: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	if !promptContains(req, "prior question") || !promptContains(req, "prior answer to member") || !promptContains(req, "current question") {
+		t.Fatalf("expected current member ai thread in prompt, got %+v", req.Messages)
+	}
+	for _, leaked := range []string{"other secret", "member unrelated group chatter", "answer to other"} {
+		if promptContains(req, leaked) {
+			t.Fatalf("group ai context leaked %q into prompt: %+v", leaked, req.Messages)
+		}
+	}
+}
+
 func TestNormalUserMessageDoesNotTriggerAI(t *testing.T) {
 	chatSvc, _ := setupChatSecurityTest(t)
 	alice := createSecurityUser(t, "normal_trigger_alice")
@@ -675,6 +734,97 @@ func TestUserAIBotUsesOwnerAPIKey(t *testing.T) {
 	usage := waitTokenUsage(t, owner.ID, bot.ID)
 	if usage.Billable || usage.TotalCostCNY != 0 || usage.TotalTokens != 150 {
 		t.Fatalf("third-party usage should only track tokens, got %+v", usage)
+	}
+}
+
+func TestUserAIBotEncryptsAPIKeyAtRest(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_encrypt_owner")
+	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{
+		APIKeyEncryptKey: "test-storage-secret",
+		Timeout:          time.Second,
+	})
+	bot, err := aiSvc.CreateUserBot(owner.ID, AIBotInput{
+		Name:    "Encrypted AI",
+		BaseURL: "http://encrypted-ai.local/v1",
+		APIKey:  "plain-owner-key",
+		Model:   "encrypted-model",
+	})
+	if err != nil {
+		t.Fatalf("create encrypted bot: %v", err)
+	}
+
+	var stored model.AIBot
+	if err := model.DB.First(&stored, bot.ID).Error; err != nil {
+		t.Fatalf("load stored bot: %v", err)
+	}
+	if stored.APIKey == "plain-owner-key" || !appcrypto.IsEncryptedString(stored.APIKey) {
+		t.Fatalf("expected encrypted api key at rest, got %q", stored.APIKey)
+	}
+
+	fake := &fakeAIClient{reply: "encrypted reply", calls: make(chan ai.ChatRequest, 1)}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{
+		APIKeyEncryptKey: "test-storage-secret",
+		Timeout:          time.Second,
+	})
+	toBot := bot.UserID
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: owner.ID,
+		ToUserID:   &toBot,
+		Content:    "hello encrypted ai",
+	}); err != nil {
+		t.Fatalf("send encrypted ai message: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	if req.APIKey != "plain-owner-key" {
+		t.Fatalf("expected decrypted api key, got %q", req.APIKey)
+	}
+}
+
+func TestLegacyPlaintextAIBotAPIKeyIsMigratedOnUse(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_legacy_key_owner")
+	botUser := createAIUser(t, "ai_legacy_key_bot")
+	ownerID := owner.ID
+	if err := model.DB.Create(&model.AIBot{
+		UserID:    botUser.ID,
+		OwnerID:   &ownerID,
+		BaseURL:   "http://legacy-ai.local/v1",
+		APIKey:    "legacy-plain-key",
+		Model:     "legacy-model",
+		Status:    model.AIBotStatusEnabled,
+		APISource: model.AIBotAPISourceThirdParty,
+	}).Error; err != nil {
+		t.Fatalf("create legacy ai bot config: %v", err)
+	}
+
+	fake := &fakeAIClient{reply: "legacy reply", calls: make(chan ai.ChatRequest, 1)}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{
+		APIKeyEncryptKey: "test-storage-secret",
+		Timeout:          time.Second,
+	})
+	toBot := botUser.ID
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: owner.ID,
+		ToUserID:   &toBot,
+		Content:    "hello legacy ai",
+	}); err != nil {
+		t.Fatalf("send legacy ai message: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	if req.APIKey != "legacy-plain-key" {
+		t.Fatalf("expected legacy api key to decrypt as plaintext, got %q", req.APIKey)
+	}
+	var stored model.AIBot
+	if err := model.DB.Where("user_id = ?", botUser.ID).First(&stored).Error; err != nil {
+		t.Fatalf("load migrated bot: %v", err)
+	}
+	if stored.APIKey == "legacy-plain-key" || !appcrypto.IsEncryptedString(stored.APIKey) {
+		t.Fatalf("expected legacy api key to be migrated, got %q", stored.APIKey)
 	}
 }
 

@@ -56,6 +56,7 @@ func main() {
 		aiSvc = service.NewAIService(aiClient, chatSvc, service.AIConfig{
 			BaseURL:            cfg.AI.BaseURL,
 			APIKey:             cfg.AI.APIKey,
+			APIKeyEncryptKey:   firstNonEmpty(cfg.AI.APIKeyEncryptKey, cfg.JWT.Secret),
 			DefaultModel:       cfg.AI.DefaultModel,
 			DefaultBotUsername: cfg.AI.DefaultBotUsername,
 			DefaultBotNickname: cfg.AI.DefaultBotNickname,
@@ -301,4 +302,13 @@ func isActiveUploadExt(ext string) bool {
 	default:
 		return false
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

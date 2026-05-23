@@ -36,18 +36,20 @@ type Log struct {
 
 // AI 大模型接入配置。
 type AI struct {
-	Enabled            bool    `mapstructure:"enabled"`
-	BaseURL            string  `mapstructure:"base_url"`
-	APIKey             string  `mapstructure:"api_key"`
-	APIKeyEnv          string  `mapstructure:"api_key_env"`
-	DefaultModel       string  `mapstructure:"default_model"`
-	DefaultBotUsername string  `mapstructure:"default_bot_username"`
-	DefaultBotNickname string  `mapstructure:"default_bot_nickname"`
-	SystemPrompt       string  `mapstructure:"system_prompt"`
-	TimeoutSeconds     int     `mapstructure:"timeout_seconds"`
-	MaxContextMessages int     `mapstructure:"max_context_messages"`
-	Temperature        float64 `mapstructure:"temperature"`
-	MaxTokens          int     `mapstructure:"max_tokens"`
+	Enabled             bool    `mapstructure:"enabled"`
+	BaseURL             string  `mapstructure:"base_url"`
+	APIKey              string  `mapstructure:"api_key"`
+	APIKeyEnv           string  `mapstructure:"api_key_env"`
+	APIKeyEncryptKey    string  `mapstructure:"api_key_encrypt_key"`
+	APIKeyEncryptKeyEnv string  `mapstructure:"api_key_encrypt_key_env"`
+	DefaultModel        string  `mapstructure:"default_model"`
+	DefaultBotUsername  string  `mapstructure:"default_bot_username"`
+	DefaultBotNickname  string  `mapstructure:"default_bot_nickname"`
+	SystemPrompt        string  `mapstructure:"system_prompt"`
+	TimeoutSeconds      int     `mapstructure:"timeout_seconds"`
+	MaxContextMessages  int     `mapstructure:"max_context_messages"`
+	Temperature         float64 `mapstructure:"temperature"`
+	MaxTokens           int     `mapstructure:"max_tokens"`
 }
 
 // Config 总配置
@@ -92,16 +94,25 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ai.max_context_messages", 12)
 	v.SetDefault("ai.temperature", 0.7)
 	v.SetDefault("ai.max_tokens", 1024)
+	v.SetDefault("ai.api_key_encrypt_key_env", "AIM_AI_API_KEY_ENCRYPT_KEY")
 }
 
 func fillAIConfigFromEnv(cfg *Config) {
-	if cfg.AI.APIKey != "" {
-		return
-	}
-	if cfg.AI.APIKeyEnv != "" {
-		cfg.AI.APIKey = os.Getenv(cfg.AI.APIKeyEnv)
-	}
 	if cfg.AI.APIKey == "" {
-		cfg.AI.APIKey = os.Getenv("AIM_AI_API_KEY")
+		if cfg.AI.APIKeyEnv != "" {
+			cfg.AI.APIKey = os.Getenv(cfg.AI.APIKeyEnv)
+		}
+		if cfg.AI.APIKey == "" {
+			cfg.AI.APIKey = os.Getenv("AIM_AI_API_KEY")
+		}
+	}
+
+	if cfg.AI.APIKeyEncryptKey == "" {
+		if cfg.AI.APIKeyEncryptKeyEnv != "" {
+			cfg.AI.APIKeyEncryptKey = os.Getenv(cfg.AI.APIKeyEncryptKeyEnv)
+		}
+		if cfg.AI.APIKeyEncryptKey == "" {
+			cfg.AI.APIKeyEncryptKey = os.Getenv("AIM_AI_API_KEY_ENCRYPT_KEY")
+		}
 	}
 }
