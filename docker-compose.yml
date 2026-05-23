@@ -1,0 +1,36 @@
+services:
+  aim:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aim:local
+    restart: unless-stopped
+    ports:
+      - "${AIM_PORT:-8080}:8080"
+    environment:
+      AIM_SERVER_HOST: 0.0.0.0
+      AIM_SERVER_PORT: 8080
+      AIM_DATABASE_DRIVER: ${AIM_DATABASE_DRIVER:-sqlite}
+      AIM_DATABASE_DSN: ${AIM_DATABASE_DSN:-/app/data/aim.db}
+      AIM_JWT_SECRET: ${AIM_JWT_SECRET:?set AIM_JWT_SECRET in .env}
+      AIM_JWT_EXPIRE_HOURS: ${AIM_JWT_EXPIRE_HOURS:-72}
+      AIM_LOG_LEVEL: ${AIM_LOG_LEVEL:-info}
+      AIM_LOG_FILE: ${AIM_LOG_FILE:-/app/logs/aim.log}
+      AIM_AI_ENABLED: ${AIM_AI_ENABLED:-true}
+      AIM_AI_BASE_URL: ${AIM_AI_BASE_URL:-}
+      AIM_AI_API_KEY: ${AIM_AI_API_KEY:-}
+      AIM_AI_API_KEY_ENCRYPT_KEY: ${AIM_AI_API_KEY_ENCRYPT_KEY:-}
+      AIM_AI_DEFAULT_MODEL: ${AIM_AI_DEFAULT_MODEL:-}
+      AIM_AI_DEFAULT_BOT_USERNAME: ${AIM_AI_DEFAULT_BOT_USERNAME:-ai_assistant}
+      AIM_AI_DEFAULT_BOT_NICKNAME: ${AIM_AI_DEFAULT_BOT_NICKNAME:-蓝妹}
+      AIM_AI_TIMEOUT_SECONDS: ${AIM_AI_TIMEOUT_SECONDS:-60}
+      AIM_AI_MAX_CONTEXT_MESSAGES: ${AIM_AI_MAX_CONTEXT_MESSAGES:-12}
+      AIM_AI_TEMPERATURE: ${AIM_AI_TEMPERATURE:-0.7}
+      AIM_AI_MAX_TOKENS: ${AIM_AI_MAX_TOKENS:-1024}
+    volumes:
+      - aim_data:/app/data
+      - aim_logs:/app/logs
+
+volumes:
+  aim_data:
+  aim_logs:
