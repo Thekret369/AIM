@@ -12,6 +12,7 @@ import (
 	"AIM/internal/model"
 	"AIM/internal/ws"
 	"AIM/pkg/ai"
+	appcrypto "AIM/pkg/crypto"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -30,6 +31,7 @@ const (
 type AIConfig struct {
 	BaseURL            string
 	APIKey             string
+	APIKeyEncryptKey   string
 	DefaultModel       string
 	DefaultBotUsername string
 	DefaultBotNickname string
@@ -240,6 +242,10 @@ func (s *AIService) CreateUserBot(ownerID uint, input AIBotInput) (*AIBotInfo, e
 	if err != nil {
 		return nil, err
 	}
+	storedAPIKey, err := s.encryptAPIKeyForStorage(input.APIKey)
+	if err != nil {
+		return nil, err
+	}
 
 	var info *AIBotInfo
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
@@ -263,7 +269,7 @@ func (s *AIService) CreateUserBot(ownerID uint, input AIBotInput) (*AIBotInfo, e
 			IsSystem:     false,
 			APISource:    input.APISource,
 			BaseURL:      input.BaseURL,
-			APIKey:       input.APIKey,
+			APIKey:       storedAPIKey,
 			Model:        input.Model,
 			SystemPrompt: input.SystemPrompt,
 			ContextLimit: input.ContextLimit,
@@ -311,6 +317,14 @@ func (s *AIService) UpdateUserBot(ownerID, botID uint, input AIBotUpdateInput) (
 			return nil, err
 		}
 	}
+	var storedAPIKey string
+	if input.APIKey != nil {
+		var err error
+		storedAPIKey, err = s.encryptAPIKeyForStorage(*input.APIKey)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		userUpdates := map[string]interface{}{}
@@ -332,7 +346,7 @@ func (s *AIService) UpdateUserBot(ownerID, botID uint, input AIBotUpdateInput) (
 			userUpdates["ai_endpoint"] = baseURL
 		}
 		if input.APIKey != nil {
-			botUpdates["api_key"] = strings.TrimSpace(*input.APIKey)
+			botUpdates["api_key"] = storedAPIKey
 		}
 		if input.Model != nil {
 			modelName := strings.TrimSpace(*input.Model)
@@ -468,7 +482,11 @@ func (s *AIService) ensureSystemBotConfig(userID uint) error {
 		"status":        model.AIBotStatusEnabled,
 	}
 	if strings.TrimSpace(s.Config.APIKey) != "" {
-		updates["api_key"] = strings.TrimSpace(s.Config.APIKey)
+		apiKey, err := s.encryptAPIKeyForStorage(s.Config.APIKey)
+		if err != nil {
+			return err
+		}
+		updates["api_key"] = apiKey
 	}
 	if err == nil {
 		return model.DB.Model(&bot).Updates(updates).Error
@@ -477,7 +495,10 @@ func (s *AIService) ensureSystemBotConfig(userID uint) error {
 		return err
 	}
 
-	apiKey := strings.TrimSpace(s.Config.APIKey)
+	apiKey, err := s.encryptAPIKeyForStorage(s.Config.APIKey)
+	if err != nil {
+		return err
+	}
 	bot = model.AIBot{
 		UserID:       userID,
 		IsSystem:     true,
@@ -783,7 +804,10 @@ func (s *AIService) loadRuntimeByUser(user model.User) (*aiRuntime, error) {
 		}
 		apiSource := bot.NormalizedAPISource()
 		baseURL := strings.TrimSpace(bot.BaseURL)
-		apiKey := strings.TrimSpace(bot.APIKey)
+		apiKey, err := s.decryptStoredAPIKey(&bot)
+		if err != nil {
+			return nil, err
+		}
 		modelName := strings.TrimSpace(bot.Model)
 		if apiSource == model.AIBotAPISourceSystem {
 			baseURL = strings.TrimSpace(s.Config.BaseURL)
@@ -839,7 +863,7 @@ func (s *AIService) buildPrompt(runtime *aiRuntime, source *model.Message) ([]ai
 		systemPrompt += "\n\n以下是当前蓝妹可参考的知识库资料，仅用于回答相关问题：\n" + knowledgeContext
 	}
 
-	history, err := s.loadContextMessages(runtime.User.ID, source, runtime.ContextLimit)
+	history, err := s.loadContextMessages(runtime, source, runtime.ContextLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -861,16 +885,16 @@ func (s *AIService) buildPrompt(runtime *aiRuntime, source *model.Message) ([]ai
 	return messages, nil
 }
 
-func (s *AIService) loadContextMessages(botID uint, source *model.Message, limit int) ([]model.Message, error) {
+func (s *AIService) loadContextMessages(runtime *aiRuntime, source *model.Message, limit int) ([]model.Message, error) {
 	if limit <= 0 {
 		limit = 12
 	}
 
 	if source.IsToUser() && source.ToUserID != nil {
-		return s.loadDirectContextMessages(botID, source.FromUserID, source.ID, limit)
+		return s.loadDirectContextMessages(runtime.User.ID, source.FromUserID, source.ID, limit)
 	}
 	if source.IsToGroup() && source.GroupID != nil {
-		return s.loadGroupContextMessages(*source.GroupID, source.ID, limit)
+		return s.loadGroupContextMessages(runtime, source, limit)
 	}
 	return nil, nil
 }
@@ -895,19 +919,70 @@ func (s *AIService) loadDirectContextMessages(botID, peerID, beforeOrEqualID uin
 	return messages, nil
 }
 
-func (s *AIService) loadGroupContextMessages(groupID, beforeOrEqualID uint, limit int) ([]model.Message, error) {
+func (s *AIService) loadGroupContextMessages(runtime *aiRuntime, source *model.Message, limit int) ([]model.Message, error) {
+	if runtime == nil || source == nil || source.GroupID == nil {
+		return nil, nil
+	}
+
 	var messages []model.Message
+	scanLimit := limit * 4
+	if scanLimit < limit {
+		scanLimit = limit
+	}
 
 	if err := model.DB.Preload("FromUser").
-		Where("id <= ? AND group_id = ?", beforeOrEqualID, groupID).
+		Where("id <= ? AND group_id = ?", source.ID, *source.GroupID).
 		Where("is_recalled = ?", false).
 		Order("id DESC").
-		Limit(limit).
+		Limit(scanLimit).
 		Find(&messages).Error; err != nil {
 		return nil, err
 	}
-	reverseMessages(messages)
-	return messages, nil
+	filtered := make([]model.Message, 0, limit)
+	for _, msg := range messages {
+		if !s.isRelevantGroupAIContextMessage(runtime.User, source.FromUserID, source.ID, msg) {
+			continue
+		}
+		filtered = append(filtered, msg)
+		if len(filtered) >= limit {
+			break
+		}
+	}
+	reverseMessages(filtered)
+	return filtered, nil
+}
+
+func (s *AIService) isRelevantGroupAIContextMessage(bot model.User, sourceUserID, sourceMessageID uint, msg model.Message) bool {
+	if msg.ID == sourceMessageID {
+		return true
+	}
+	if msg.Type != model.MsgText || strings.TrimSpace(msg.Content) == "" {
+		return false
+	}
+	if msg.FromUserID == sourceUserID {
+		return groupMessageMentionsUser(msg, bot)
+	}
+	if msg.FromUserID == bot.ID {
+		return messageMentionsUserID(msg.Mentions, sourceUserID)
+	}
+	return false
+}
+
+func groupMessageMentionsUser(msg model.Message, user model.User) bool {
+	if messageMentionsUserID(msg.Mentions, user.ID) {
+		return true
+	}
+	return containsMention(msg.Content, user.Username) || containsMention(msg.Content, user.Nickname)
+}
+
+func messageMentionsUserID(raw string, userID uint) bool {
+	ids := parseMentionIDs(raw)
+	for _, id := range ids {
+		if id == userID {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *AIService) sendReply(bot model.User, source *model.Message, content string) (*model.Message, error) {
@@ -968,6 +1043,38 @@ func (s *AIService) sendAIStream(source *model.Message, payload *ws.AIStreamPayl
 		}
 		s.Chat.Hub.SendAIStreamToUsers(userIDs, payload)
 	}
+}
+
+func (s *AIService) encryptAPIKeyForStorage(apiKey string) (string, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return "", nil
+	}
+	if appcrypto.IsEncryptedString(apiKey) {
+		return apiKey, nil
+	}
+	if strings.TrimSpace(s.Config.APIKeyEncryptKey) == "" {
+		return apiKey, nil
+	}
+	return appcrypto.EncryptString(apiKey, s.Config.APIKeyEncryptKey)
+}
+
+func (s *AIService) decryptStoredAPIKey(bot *model.AIBot) (string, error) {
+	if bot == nil || strings.TrimSpace(bot.APIKey) == "" {
+		return "", nil
+	}
+	apiKey, err := appcrypto.DecryptString(bot.APIKey, s.Config.APIKeyEncryptKey)
+	if err != nil {
+		return "", err
+	}
+	if !appcrypto.IsEncryptedString(bot.APIKey) && strings.TrimSpace(s.Config.APIKeyEncryptKey) != "" {
+		if encrypted, encryptErr := s.encryptAPIKeyForStorage(apiKey); encryptErr == nil && encrypted != bot.APIKey {
+			if updateErr := model.DB.Model(&model.AIBot{}).Where("id = ?", bot.ID).Update("api_key", encrypted).Error; updateErr == nil {
+				bot.APIKey = encrypted
+			}
+		}
+	}
+	return apiKey, nil
 }
 
 func (s *AIService) normalizeCreateAIBotInput(input *AIBotInput) error {
