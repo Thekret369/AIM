@@ -71,9 +71,19 @@ func TestValidateRejectsInvalidPort(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsUnsupportedDatabaseDriver(t *testing.T) {
+func TestValidateAcceptsMySQLDatabaseDriver(t *testing.T) {
 	cfg := validConfig()
 	cfg.Database.Driver = "mysql"
+
+	err := cfg.Validate()
+	if err != nil {
+		t.Fatalf("expected mysql database driver to pass, got %v", err)
+	}
+}
+
+func TestValidateRejectsUnsupportedDatabaseDriver(t *testing.T) {
+	cfg := validConfig()
+	cfg.Database.Driver = "postgres"
 
 	err := cfg.Validate()
 	if err == nil || !strings.Contains(err.Error(), "database.driver") {
