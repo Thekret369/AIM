@@ -32,7 +32,7 @@ func main() {
 	}
 
 	// 初始化数据库
-	if err := model.InitDB(cfg.Database.DSN); err != nil {
+	if err := model.InitDB(cfg.Database.Driver, cfg.Database.DSN); err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
 
