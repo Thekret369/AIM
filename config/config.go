@@ -110,8 +110,10 @@ func (cfg *Config) Validate() error {
 	if cfg.Database.Driver == "" {
 		cfg.Database.Driver = "sqlite"
 	}
-	if cfg.Database.Driver != "sqlite" {
-		problems = append(problems, "database.driver 当前仅支持 sqlite")
+	switch cfg.Database.Driver {
+	case "sqlite", "mysql":
+	default:
+		problems = append(problems, "database.driver 仅支持 sqlite/mysql")
 	}
 	cfg.Database.DSN = strings.TrimSpace(cfg.Database.DSN)
 	if cfg.Database.DSN == "" {
