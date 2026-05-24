@@ -32,7 +32,28 @@ docker compose up -d --build
 - 上传文件：`/app/data/uploads`
 - 日志目录：`/app/logs`
 
-`docker-compose.yml` 使用命名卷持久化数据和日志。当前运行时代码只接入 SQLite，`AIM_DATABASE_DRIVER` 请保持为 `sqlite`。
+`docker-compose.yml` 使用命名卷持久化数据和日志。默认部署使用 SQLite，`AIM_DATABASE_DRIVER` 保持为 `sqlite`。
+
+## MySQL 部署
+
+需要 MySQL 时，在 `.env` 中改成下面的数据库配置，并填写 MySQL 密码：
+
+```env
+AIM_DATABASE_DRIVER=mysql
+AIM_DATABASE_DSN=aim:change-me@tcp(mysql:3306)/aim?charset=utf8mb4&parseTime=True&loc=Local
+AIM_MYSQL_DATABASE=aim
+AIM_MYSQL_USER=aim
+AIM_MYSQL_PASSWORD=change-me
+AIM_MYSQL_ROOT_PASSWORD=change-root-me
+```
+
+启动 MySQL profile：
+
+```powershell
+docker compose --profile mysql up -d --build
+```
+
+MySQL 服务使用 `aim_mysql` 命名卷持久化数据。
 
 ## 常用环境变量
 

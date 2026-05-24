@@ -31,6 +31,25 @@ services:
       - aim_data:/app/data
       - aim_logs:/app/logs
 
+  mysql:
+    image: mysql:8.4
+    profiles:
+      - mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${AIM_MYSQL_DATABASE:-aim}
+      MYSQL_USER: ${AIM_MYSQL_USER:-aim}
+      MYSQL_PASSWORD: ${AIM_MYSQL_PASSWORD:-aim_local_password}
+      MYSQL_ROOT_PASSWORD: ${AIM_MYSQL_ROOT_PASSWORD:-aim_local_root_password}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${AIM_MYSQL_PORT:-3306}:3306"
+    volumes:
+      - aim_mysql:/var/lib/mysql
+
 volumes:
   aim_data:
   aim_logs:
+  aim_mysql:
