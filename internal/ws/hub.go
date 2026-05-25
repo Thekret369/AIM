@@ -21,8 +21,11 @@ type Hub struct {
 	OnReadReceipt   chan *ReadReceiptPayload
 	OnUserOnline    chan uint
 
-	// UseClientMessages 开启后，chat 消息会携带来源 Client 进入 OnClientMessage。
+	// UseClientMessages sends chat messages through OnClientMessage with source client metadata.
 	UseClientMessages bool
+
+	// StatusRecipients returns users allowed to see a user's online status.
+	StatusRecipients func(userID uint) ([]uint, error)
 }
 
 func NewHub() *Hub {
@@ -273,7 +276,11 @@ func (h *Hub) SendReadReceipt(toUserID uint, payload *ReadReceiptPayload) {
 }
 
 func (h *Hub) broadcastStatus(userID uint, online bool) {
-	clients := h.snapshotAllClients()
+	recipientIDs, err := h.statusRecipientIDs(userID)
+	if err != nil || len(recipientIDs) == 0 {
+		return
+	}
+	clients := h.snapshotUsersClients(recipientIDs, userID)
 	if len(clients) == 0 {
 		return
 	}
@@ -283,6 +290,13 @@ func (h *Hub) broadcastStatus(userID uint, online bool) {
 		Payload: mustMarshal(&payload),
 	})
 	sendToClients(clients, data)
+}
+
+func (h *Hub) statusRecipientIDs(userID uint) ([]uint, error) {
+	if userID == 0 || h.StatusRecipients == nil {
+		return nil, nil
+	}
+	return h.StatusRecipients(userID)
 }
 
 func mustMarshal(v interface{}) json.RawMessage {
