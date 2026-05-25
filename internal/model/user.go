@@ -65,7 +65,7 @@ type User struct {
 	// AIModel 若为 AI 用户，记录其背后的模型名称（如 gpt-4 / qwen）
 	AIModel     string `gorm:"size:128;default:''" json:"ai_model,omitempty"`
 	// AISystemPrompt 若为 AI 用户，其行为约束的系统提示词
-	AISystemPrompt string `gorm:"type:text;default:''" json:"ai_system_prompt,omitempty"`
+	AISystemPrompt string `gorm:"type:text" json:"ai_system_prompt,omitempty"`
 	// AIEndpoint 若为 AI 用户，其对应的 API 端点
 	AIEndpoint  string `gorm:"size:512;default:''" json:"ai_endpoint,omitempty"`
 
