@@ -23,3 +23,13 @@ tests/
 # 环境文件
 .env
 .env.local
+
+# Runtime artifacts
+logs/
+*.log
+*.pid
+*.db.bak*
+
+# Local build/cache artifacts
+data/go-build-cache/
+data/*.exe
