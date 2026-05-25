@@ -1,5 +1,9 @@
 .git
+.gitignore
+.gitattributes
 .idea
+.vscode
+
 .env
 .env.*
 !.env.example
@@ -11,6 +15,7 @@ logs/
 *.db
 *.db-*
 *.bak*
+*.log
 *.pid
 *.exe
 *.out
