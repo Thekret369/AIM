@@ -39,6 +39,7 @@ func main() {
 	// 初始化 Hub
 	hub := ws.NewHub()
 	hub.UseClientMessages = true
+	hub.StatusRecipients = service.StatusVisibleUserIDs
 
 	// 初始化所有 Service
 	authSvc := &service.AuthService{
