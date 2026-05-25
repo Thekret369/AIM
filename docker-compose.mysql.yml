@@ -1,0 +1,50 @@
+services:
+  aim:
+    environment:
+      AIM_DATABASE_DRIVER: mysql
+      AIM_DATABASE_DSN: ${AIM_DATABASE_DSN:-aim:aim_local_password@tcp(mysql:3306)/aim?charset=utf8mb4&parseTime=True&loc=Local}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: ${AIM_MYSQL_IMAGE:-mysql:8.4}
+    container_name: ${AIM_MYSQL_CONTAINER_NAME:-aim-mysql}
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${AIM_MYSQL_DATABASE:-aim}
+      MYSQL_USER: ${AIM_MYSQL_USER:-aim}
+      MYSQL_PASSWORD: ${AIM_MYSQL_PASSWORD:-aim_local_password}
+      MYSQL_ROOT_PASSWORD: ${AIM_MYSQL_ROOT_PASSWORD:-aim_local_root_password}
+      TZ: ${TZ:-Asia/Shanghai}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${AIM_MYSQL_PORT:-3306}:3306"
+    volumes:
+      - aim_mysql:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - aim_net
+
+volumes:
+  aim_mysql:
+    name: ${AIM_MYSQL_VOLUME:-aim_mysql}
+
+networks:
+  aim_net:
+    name: ${AIM_NETWORK:-aim_net}
+    driver: bridge
