@@ -1,0 +1,1818 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>AIM Android UI Prototype</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --surface-2: #f1f5f9;
+      --surface-3: #edf7f4;
+      --text: #101828;
+      --muted: #667085;
+      --subtle: #98a2b3;
+      --line: #e4e7ec;
+      --primary: #0e7c66;
+      --primary-strong: #075d4d;
+      --primary-soft: #dff6ef;
+      --accent: #2563eb;
+      --accent-soft: #eaf1ff;
+      --ai: #6d5bd0;
+      --ai-soft: #f0edff;
+      --warn: #f59e0b;
+      --danger: #d92d20;
+      --dark: #111827;
+      --shadow: 0 18px 40px rgba(16, 24, 40, 0.12);
+      --soft-shadow: 0 8px 22px rgba(16, 24, 40, 0.08);
+      --r: 8px;
+      --phone-w: 390px;
+      --phone-h: 844px;
+      font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% 15%, rgba(14, 124, 102, 0.12), transparent 26%),
+        linear-gradient(135deg, #edf2f7 0%, #f8fafc 52%, #e9eef5 100%);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .prototype-stage {
+      width: min(100vw, 1180px);
+      height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) var(--phone-w) minmax(0, 1fr);
+      align-items: center;
+      justify-items: center;
+      gap: 36px;
+      padding: 24px;
+    }
+
+    .context-panel {
+      width: min(300px, 100%);
+      color: #344054;
+      align-self: center;
+    }
+
+    .context-panel h1 {
+      margin: 0 0 16px;
+      font-size: 28px;
+      line-height: 1.22;
+      letter-spacing: 0;
+    }
+
+    .context-panel p {
+      margin: 0 0 22px;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .flow-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .flow-list button {
+      width: 100%;
+      min-height: 42px;
+      border-radius: var(--r);
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(228, 231, 236, 0.9);
+      color: #344054;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: transform 160ms ease, background 160ms ease, color 160ms ease, border-color 160ms ease;
+    }
+
+    .flow-list button.is-active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    .flow-list button:active {
+      transform: scale(0.98);
+    }
+
+    .phone {
+      position: relative;
+      width: var(--phone-w);
+      height: var(--phone-h);
+      overflow: hidden;
+      border-radius: 28px;
+      background: var(--bg);
+      border: 10px solid #111827;
+      box-shadow: var(--shadow);
+      isolation: isolate;
+    }
+
+    .phone::before {
+      content: "";
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      width: 92px;
+      height: 22px;
+      border-radius: 999px;
+      background: #111827;
+      transform: translateX(-50%);
+      z-index: 50;
+    }
+
+    .phone-shell {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      background: var(--bg);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(20px);
+      transition: opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .screen.is-active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(0);
+    }
+
+    .screen.is-exiting-left {
+      transform: translateX(-18px);
+    }
+
+    .status-bar {
+      height: 34px;
+      padding: 10px 20px 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0;
+      color: var(--text);
+    }
+
+    .status-icons {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text);
+    }
+
+    .status-icons svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .topbar {
+      height: 62px;
+      padding: 8px 18px 0;
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) 38px;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .topbar.simple {
+      grid-template-columns: minmax(0, 1fr) 38px;
+    }
+
+    .topbar-title {
+      min-width: 0;
+    }
+
+    .topbar h2 {
+      margin: 0;
+      font-size: 21px;
+      line-height: 28px;
+      letter-spacing: 0;
+    }
+
+    .topbar span {
+      display: block;
+      margin-top: 2px;
+      font-size: 12px;
+      line-height: 16px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: var(--r);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      display: grid;
+      place-items: center;
+      color: var(--text);
+      transition: transform 140ms ease, background 140ms ease, color 140ms ease;
+    }
+
+    .icon-btn:active {
+      transform: scale(0.94);
+      background: var(--surface-2);
+    }
+
+    .icon-btn svg {
+      width: 19px;
+      height: 19px;
+      stroke-width: 2.2;
+    }
+
+    .page-scroll {
+      height: calc(100% - 34px);
+      overflow: auto;
+      padding-bottom: 108px;
+      scrollbar-width: none;
+    }
+
+    .page-scroll::-webkit-scrollbar {
+      display: none;
+    }
+
+    .content {
+      padding: 0 20px;
+    }
+
+    .brand-block {
+      padding: 54px 12px 36px;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .logo {
+      width: 56px;
+      height: 56px;
+      border-radius: var(--r);
+      background: linear-gradient(135deg, var(--primary), #19a987);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 17px;
+      font-weight: 800;
+      box-shadow: var(--soft-shadow);
+    }
+
+    .brand-row h1 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 36px;
+      letter-spacing: 0;
+    }
+
+    .brand-row p,
+    .lead {
+      margin: 3px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 20px;
+    }
+
+    .form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .field label {
+      display: block;
+      margin: 0 0 7px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .field input {
+      width: 100%;
+      height: 48px;
+      border-radius: var(--r);
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 0 14px;
+      outline: none;
+      color: var(--text);
+      font-size: 15px;
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .field input:focus {
+      border-color: rgba(14, 124, 102, 0.7);
+      box-shadow: 0 0 0 4px rgba(14, 124, 102, 0.12);
+    }
+
+    .primary-btn,
+    .ghost-btn {
+      width: 100%;
+      height: 48px;
+      border-radius: var(--r);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 800;
+      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    }
+
+    .primary-btn {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: var(--soft-shadow);
+    }
+
+    .primary-btn.is-dark {
+      background: var(--dark);
+    }
+
+    .ghost-btn {
+      background: var(--surface);
+      color: var(--primary);
+      border: 1px solid var(--line);
+    }
+
+    .primary-btn:active,
+    .ghost-btn:active {
+      transform: scale(0.985);
+      box-shadow: none;
+    }
+
+    .server-pill {
+      margin-top: 112px;
+      height: 44px;
+      border-radius: var(--r);
+      background: var(--surface-2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .server-pill button {
+      color: var(--primary);
+      font-weight: 800;
+    }
+
+    .field-grid {
+      display: grid;
+      gap: 14px;
+      padding-top: 144px;
+    }
+
+    .setup-title {
+      padding: 78px 32px 0;
+    }
+
+    .setup-title h1 {
+      margin: 0 0 12px;
+      font-size: 26px;
+      line-height: 34px;
+    }
+
+    .setup-title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 22px;
+    }
+
+    .segment-row {
+      display: flex;
+      gap: 8px;
+      margin: 20px 0;
+    }
+
+    .chip {
+      min-width: 0;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: var(--r);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+    }
+
+    .chip.is-active {
+      background: var(--primary-soft);
+      border-color: transparent;
+      color: var(--primary);
+    }
+
+    .chip.is-ai.is-active {
+      background: var(--ai-soft);
+      color: var(--ai);
+    }
+
+    .chip:active {
+      transform: scale(0.96);
+    }
+
+    .check-card {
+      border-radius: var(--r);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 16px;
+      margin-bottom: 36px;
+    }
+
+    .check-card h3,
+    .section-title {
+      margin: 0 0 14px;
+      font-size: 15px;
+      line-height: 22px;
+    }
+
+    .check-row {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .state-ok {
+      color: var(--primary);
+      font-weight: 800;
+    }
+
+    .state-wait {
+      color: var(--warn);
+      font-weight: 800;
+    }
+
+    .search {
+      height: 42px;
+      border-radius: var(--r);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      color: var(--subtle);
+      font-size: 13px;
+    }
+
+    .search svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    .conversation-list,
+    .contact-list,
+    .settings-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .conversation-row,
+    .setting-row {
+      min-height: 72px;
+      border-radius: var(--r);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      display: grid;
+      align-items: center;
+      transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+    }
+
+    .conversation-row {
+      grid-template-columns: 54px minmax(0, 1fr) 52px;
+      gap: 10px;
+      padding: 0 13px;
+    }
+
+    .conversation-row:active,
+    .setting-row:active {
+      transform: scale(0.985);
+      background: #fbfcfd;
+      box-shadow: var(--soft-shadow);
+    }
+
+    .avatar {
+      position: relative;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--primary-soft);
+      color: var(--primary);
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      font-weight: 900;
+      flex: 0 0 auto;
+    }
+
+    .avatar.accent {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .avatar.ai {
+      background: var(--ai-soft);
+      color: var(--ai);
+    }
+
+    .avatar.warn {
+      background: #fff4e6;
+      color: var(--warn);
+    }
+
+    .avatar.gray {
+      background: var(--surface-2);
+      color: var(--muted);
+    }
+
+    .avatar.small {
+      width: 34px;
+      height: 34px;
+      font-size: 11px;
+    }
+
+    .online-dot {
+      position: absolute;
+      right: 0;
+      bottom: 1px;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--primary);
+      border: 2px solid var(--surface);
+    }
+
+    .row-main {
+      min-width: 0;
+    }
+
+    .row-main strong {
+      display: block;
+      font-size: 15px;
+      line-height: 21px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .row-main span {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      line-height: 17px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .row-meta {
+      height: 48px;
+      display: grid;
+      justify-items: end;
+      align-content: start;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--subtle);
+    }
+
+    .badge {
+      min-width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: var(--danger);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      padding: 0 6px;
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .fab {
+      position: absolute;
+      right: 26px;
+      bottom: 116px;
+      width: 56px;
+      height: 56px;
+      border-radius: var(--r);
+      background: var(--primary);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      box-shadow: var(--soft-shadow);
+      transition: transform 150ms ease;
+      z-index: 8;
+    }
+
+    .fab:active {
+      transform: scale(0.94);
+    }
+
+    .bottom-nav {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 86px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.96);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      box-shadow: 0 -8px 22px rgba(16, 24, 40, 0.06);
+      z-index: 20;
+    }
+
+    .nav-item {
+      position: relative;
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 5px;
+      color: var(--subtle);
+      font-size: 12px;
+      font-weight: 700;
+      transition: color 160ms ease, transform 160ms ease;
+    }
+
+    .nav-item::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      width: 44px;
+      height: 4px;
+      border-radius: 999px;
+      background: transparent;
+      transition: background 160ms ease, transform 160ms ease;
+    }
+
+    .nav-item svg {
+      width: 21px;
+      height: 21px;
+      stroke-width: 2.1;
+    }
+
+    .nav-item.is-active {
+      color: var(--primary);
+      transform: translateY(-1px);
+    }
+
+    .nav-item.is-active[data-screen="ai"] {
+      color: var(--ai);
+    }
+
+    .nav-item.is-active::before {
+      background: currentColor;
+    }
+
+    .chat-body {
+      height: calc(100% - 96px);
+      overflow: auto;
+      padding: 18px 20px 142px;
+      scrollbar-width: none;
+    }
+
+    .chat-body::-webkit-scrollbar {
+      display: none;
+    }
+
+    .day-mark {
+      margin: 2px auto 18px;
+      width: fit-content;
+      color: var(--subtle);
+      font-size: 11px;
+      line-height: 18px;
+    }
+
+    .msg-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 18px;
+      animation: message-in 170ms ease both;
+    }
+
+    .msg-row.out {
+      justify-content: flex-end;
+    }
+
+    .bubble {
+      max-width: 268px;
+      border-radius: var(--r);
+      padding: 10px 12px 8px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: 0 3px 10px rgba(16, 24, 40, 0.04);
+      font-size: 13px;
+      line-height: 20px;
+      color: var(--text);
+    }
+
+    .out .bubble {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .ai-bubble {
+      background: var(--ai-soft);
+      border-color: #d8d2ff;
+    }
+
+    .bubble-meta {
+      display: block;
+      margin-top: 6px;
+      font-size: 10px;
+      line-height: 14px;
+      color: var(--subtle);
+    }
+
+    .out .bubble-meta {
+      color: #d8f5ec;
+      text-align: right;
+    }
+
+    .image-bubble {
+      width: 180px;
+      height: 112px;
+      border-radius: var(--r);
+      background:
+        linear-gradient(135deg, rgba(37, 99, 235, 0.10), rgba(14, 124, 102, 0.14)),
+        #dce7f8;
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 800;
+      border: 1px solid rgba(37, 99, 235, 0.18);
+    }
+
+    .composer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      min-height: 118px;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      padding: 14px 18px max(16px, env(safe-area-inset-bottom));
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr) 52px;
+      gap: 8px;
+      align-items: start;
+      z-index: 30;
+    }
+
+    .composer textarea {
+      height: 44px;
+      resize: none;
+      border-radius: var(--r);
+      border: 1px solid var(--line);
+      background: var(--bg);
+      outline: none;
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 18px;
+      color: var(--text);
+    }
+
+    .composer .send {
+      height: 44px;
+      border-radius: var(--r);
+      background: var(--primary);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .ai-status {
+      margin: 6px 0 14px;
+      border-radius: var(--r);
+      background: var(--ai-soft);
+      border: 1px solid #d8d2ff;
+      padding: 14px 16px;
+    }
+
+    .ai-status strong {
+      display: block;
+      color: var(--ai);
+      font-size: 15px;
+      line-height: 22px;
+    }
+
+    .ai-status span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .streaming {
+      width: fit-content;
+      border-radius: var(--r);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 12px 14px;
+      color: var(--ai);
+      font-size: 13px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .cursor-dot {
+      width: 7px;
+      height: 18px;
+      border-radius: 999px;
+      background: var(--ai);
+      animation: blink 900ms steps(2, start) infinite;
+    }
+
+    .context-card,
+    .profile-card,
+    .server-card {
+      border-radius: var(--r);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 16px;
+      box-shadow: 0 4px 16px rgba(16, 24, 40, 0.04);
+    }
+
+    .context-card {
+      margin-top: 22px;
+    }
+
+    .context-card strong,
+    .profile-card strong {
+      display: block;
+      font-size: 14px;
+      line-height: 21px;
+      margin-bottom: 8px;
+    }
+
+    .context-card span,
+    .profile-card span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 19px;
+    }
+
+    .contact-row {
+      min-height: 62px;
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .contact-row:last-child {
+      border-bottom: 0;
+    }
+
+    .section-title {
+      margin: 24px 0 10px;
+    }
+
+    .profile-card {
+      display: grid;
+      grid-template-columns: 66px minmax(0, 1fr);
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .profile-card .avatar {
+      width: 56px;
+      height: 56px;
+      font-size: 15px;
+    }
+
+    .profile-card h3 {
+      margin: 0 0 5px;
+      font-size: 17px;
+      line-height: 24px;
+    }
+
+    .profile-card .chip {
+      margin-top: 8px;
+      width: 54px;
+      pointer-events: none;
+    }
+
+    .server-card {
+      display: grid;
+      gap: 12px;
+    }
+
+    .server-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .setting-row {
+      grid-template-columns: minmax(0, 1fr) 24px;
+      padding: 12px 14px 12px 16px;
+    }
+
+    .setting-row strong {
+      display: block;
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    .setting-row span {
+      display: block;
+      margin-top: 5px;
+      font-size: 11px;
+      line-height: 16px;
+      color: var(--muted);
+    }
+
+    .sheet-dim {
+      position: absolute;
+      inset: 0;
+      background: rgba(17, 24, 39, 0.34);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease;
+      z-index: 38;
+    }
+
+    .sheet {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      min-height: 322px;
+      border-radius: 22px 22px 0 0;
+      background: var(--surface);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(104%);
+      transition: opacity 180ms ease, transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      box-shadow: 0 -18px 34px rgba(16, 24, 40, 0.18);
+      z-index: 39;
+      padding: 12px 24px 22px;
+    }
+
+    .sheet.is-open {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    .sheet-dim.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sheet-handle {
+      width: 62px;
+      height: 5px;
+      margin: 0 auto 18px;
+      border-radius: 999px;
+      background: var(--line);
+    }
+
+    .sheet h3 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 24px;
+    }
+
+    .sheet p {
+      margin: 8px 0 22px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 19px;
+    }
+
+    .upload-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .upload-action {
+      min-height: 64px;
+      border-radius: var(--r);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      text-align: left;
+      transition: transform 140ms ease, border-color 140ms ease;
+    }
+
+    .upload-action:active {
+      transform: scale(0.98);
+      border-color: var(--primary);
+    }
+
+    .upload-action .icon-square {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--r);
+      background: var(--accent-soft);
+      color: var(--accent);
+      display: grid;
+      place-items: center;
+    }
+
+    .upload-action:nth-child(3) .icon-square {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
+    .upload-action:nth-child(4) .icon-square {
+      background: var(--ai-soft);
+      color: var(--ai);
+    }
+
+    .upload-action strong {
+      display: block;
+      font-size: 13px;
+      line-height: 18px;
+    }
+
+    .upload-action span {
+      display: block;
+      margin-top: 3px;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .snackbar {
+      position: absolute;
+      left: 20px;
+      right: 20px;
+      bottom: 100px;
+      min-height: 44px;
+      border-radius: var(--r);
+      background: var(--dark);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 14px;
+      font-size: 12px;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(12px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      z-index: 60;
+    }
+
+    .snackbar.is-showing {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .reconnect {
+      position: absolute;
+      top: 34px;
+      left: 16px;
+      right: 16px;
+      height: 38px;
+      border-radius: var(--r);
+      background: #fff4e6;
+      color: #9a5b00;
+      border: 1px solid rgba(245, 158, 11, 0.22);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      opacity: 0;
+      transform: translateY(-12px);
+      pointer-events: none;
+      transition: opacity 180ms ease, transform 180ms ease;
+      z-index: 55;
+    }
+
+    .reconnect.is-showing {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .context-menu {
+      position: absolute;
+      min-width: 144px;
+      border-radius: var(--r);
+      background: var(--dark);
+      color: #fff;
+      padding: 7px;
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.92);
+      transform-origin: top right;
+      transition: opacity 140ms ease, transform 140ms ease;
+      z-index: 62;
+      box-shadow: var(--shadow);
+    }
+
+    .context-menu.is-open {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1);
+    }
+
+    .context-menu button {
+      width: 100%;
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 9px;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    .context-menu button:active {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .skeleton-line {
+      height: 12px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #eef2f6 0%, #f8fafc 48%, #eef2f6 100%);
+      background-size: 220% 100%;
+      animation: shimmer 1.2s linear infinite;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @keyframes message-in {
+      from {
+        opacity: 0;
+        transform: translateY(9px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    @keyframes shimmer {
+      to {
+        background-position: -220% 0;
+      }
+    }
+
+    @media (max-width: 840px) {
+      body {
+        background: var(--bg);
+      }
+
+      .prototype-stage {
+        width: 100vw;
+        height: 100vh;
+        padding: 0;
+        display: block;
+      }
+
+      .context-panel {
+        display: none;
+      }
+
+      .phone {
+        width: 100vw;
+        height: 100vh;
+        border-radius: 0;
+        border: 0;
+        box-shadow: none;
+      }
+
+      .phone::before {
+        display: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 1ms !important;
+        transition-duration: 1ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute">
+    <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3 1.3-5.2A8 8 0 1 1 21 12Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" fill="none" stroke="currentColor" stroke-linecap="round"/><circle cx="9" cy="7" r="4" fill="none" stroke="currentColor"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" fill="none" stroke="currentColor" stroke-linecap="round"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2Z" fill="none" stroke="currentColor" stroke-linejoin="round"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" fill="none" stroke="currentColor" stroke-linejoin="round"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0" fill="none" stroke="currentColor" stroke-linecap="round"/><circle cx="12" cy="7" r="4" fill="none" stroke="currentColor"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-linecap="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor"/><path d="m20 20-3.5-3.5" fill="none" stroke="currentColor" stroke-linecap="round"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" fill="none" stroke="currentColor"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" fill="none" stroke="currentColor" stroke-linecap="round"/></symbol>
+    <symbol id="i-photo" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor"/><circle cx="8" cy="10" r="2" fill="none" stroke="currentColor"/><path d="m21 16-5-5L5 19" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" fill="none" stroke="currentColor" stroke-linejoin="round"/><path d="M14 3v6h6" fill="none" stroke="currentColor" stroke-linejoin="round"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M6 8h2l1.5-2h5L16 8h2a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3Z" fill="none" stroke="currentColor" stroke-linejoin="round"/><circle cx="12" cy="14" r="3.5" fill="none" stroke="currentColor"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" fill="none" stroke="currentColor"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3M8 21h8" fill="none" stroke="currentColor" stroke-linecap="round"/></symbol>
+  </svg>
+
+  <main class="prototype-stage">
+    <aside class="context-panel" aria-label="原型流程">
+      <h1>AIM Android 竖屏 UI</h1>
+      <p>面向测试包体的触摸端高保真原型，保留 WebView 快速接入路径，并为后续 Compose 原生化沉淀视觉与动效规则。</p>
+      <nav class="flow-list">
+        <button class="is-active" type="button" data-jump="setup">测试服设置 <span>01</span></button>
+        <button type="button" data-jump="login">登录 <span>02</span></button>
+        <button type="button" data-jump="chats">会话 <span>03</span></button>
+        <button type="button" data-jump="chat">聊天 <span>04</span></button>
+        <button type="button" data-jump="ai">AI 助手 <span>05</span></button>
+        <button type="button" data-jump="contacts">联系人 <span>06</span></button>
+        <button type="button" data-jump="profile">我的 <span>07</span></button>
+      </nav>
+    </aside>
+
+    <section class="phone" aria-label="AIM Android 原型">
+      <div class="phone-shell">
+        <div class="reconnect" id="reconnect">网络恢复中，正在重连 WebSocket</div>
+
+        <section class="screen is-active" data-screen="setup">
+          <div class="status-bar">
+            <span>23:42</span>
+            <span class="status-icons"><svg><use href="#i-message"></use></svg><svg><use href="#i-file"></use></svg></span>
+          </div>
+          <div class="page-scroll">
+            <div class="setup-title">
+              <div class="logo">AI</div>
+              <h1>测试包连接配置</h1>
+              <p>输入服务器地址，优先验证 API、WebSocket 和上传链路。</p>
+            </div>
+            <div class="content field-grid">
+              <div class="field">
+                <label for="server-url">服务器地址</label>
+                <input id="server-url" value="http://192.168.1.8:8080" />
+              </div>
+              <div class="field">
+                <label for="ws-url">WebSocket</label>
+                <input id="ws-url" value="ws://192.168.1.8:8080/ws" />
+              </div>
+              <div class="segment-row" role="group" aria-label="环境类型">
+                <button type="button" class="chip is-active">局域网</button>
+                <button type="button" class="chip">测试服</button>
+                <button type="button" class="chip">公网 HTTPS</button>
+              </div>
+              <div class="check-card">
+                <h3>连接检查</h3>
+                <div class="check-row"><span>API /api/login</span><span class="state-ok">通过</span></div>
+                <div class="check-row"><span>WebSocket 鉴权</span><span class="state-wait">待登录</span></div>
+                <div class="check-row"><span>文件上传目录</span><span class="state-wait">待测试</span></div>
+              </div>
+              <button class="primary-btn" type="button" data-go="login">保存并进入登录</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" data-screen="login">
+          <div class="status-bar">
+            <span>23:42</span>
+            <span class="status-icons"><svg><use href="#i-users"></use></svg><svg><use href="#i-file"></use></svg></span>
+          </div>
+          <div class="page-scroll">
+            <div class="content brand-block">
+              <div class="brand-row">
+                <div class="logo">AI</div>
+                <div>
+                  <h1>AIM</h1>
+                  <p>通讯 + AI 的移动测试入口</p>
+                </div>
+              </div>
+              <div class="form">
+                <div class="field">
+                  <label for="login-name">账号</label>
+                  <input id="login-name" value="zhangsan" />
+                </div>
+                <div class="field">
+                  <label for="login-password">密码</label>
+                  <input id="login-password" type="password" value="password" />
+                </div>
+                <button class="primary-btn" type="button" data-go="chats">登录</button>
+                <button class="ghost-btn" type="button">注册新账号</button>
+              </div>
+              <div class="server-pill">
+                <span>当前服务器 192.168.1.8:8080</span>
+                <button type="button" data-go="setup">修改</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" data-screen="chats">
+          <div class="status-bar">
+            <span>23:42</span>
+            <span class="status-icons"><svg><use href="#i-message"></use></svg><svg><use href="#i-file"></use></svg></span>
+          </div>
+          <div class="topbar simple">
+            <div class="topbar-title">
+              <h2>消息</h2>
+              <span>5 个会话 · 2 人在线</span>
+            </div>
+            <button class="icon-btn" type="button" aria-label="新建会话"><svg><use href="#i-plus"></use></svg></button>
+          </div>
+          <div class="page-scroll">
+            <div class="content">
+              <div class="search"><svg><use href="#i-search"></use></svg><span>搜索联系人、群聊或消息</span></div>
+              <div class="segment-row">
+                <button type="button" class="chip is-active">全部</button>
+                <button type="button" class="chip">未读</button>
+                <button type="button" class="chip">群聊</button>
+                <button type="button" class="chip is-ai">AI</button>
+              </div>
+              <div class="conversation-list">
+                <button type="button" class="conversation-row" data-go="chat">
+                  <span class="avatar accent">蓝<span class="online-dot"></span></span>
+                  <span class="row-main"><strong>蓝莓</strong><span>图片已收到，晚上继续确认。</span></span>
+                  <span class="row-meta"><span>23:18</span><span class="badge">2</span></span>
+                </button>
+                <button type="button" class="conversation-row" data-go="chat">
+                  <span class="avatar">项</span>
+                  <span class="row-main"><strong>AIM 项目组</strong><span>@你 后端测试服已经上线。</span></span>
+                  <span class="row-meta"><span>22:40</span><span class="badge">5</span></span>
+                </button>
+                <button type="button" class="conversation-row" data-go="ai">
+                  <span class="avatar ai">AI</span>
+                  <span class="row-main"><strong>AIM 助手</strong><span>可以，我会根据接口文档整理。</span></span>
+                  <span class="row-meta"><span>21:06</span><span class="badge">1</span></span>
+                </button>
+                <button type="button" class="conversation-row" data-go="chat">
+                  <span class="avatar warn">王<span class="online-dot"></span></span>
+                  <span class="row-main"><strong>王工</strong><span>WebSocket 断线重连我再跑一轮。</span></span>
+                  <span class="row-meta"><span>昨天</span></span>
+                </button>
+                <button type="button" class="conversation-row" data-go="chat">
+                  <span class="avatar gray">测</span>
+                  <span class="row-main"><strong>测试公告</strong><span>本周包体只验证 WebView 壳。</span></span>
+                  <span class="row-meta"><span>周日</span></span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <button class="fab" type="button" aria-label="新建聊天"><svg width="24" height="24"><use href="#i-plus"></use></svg></button>
+          <nav class="bottom-nav" aria-label="主导航"></nav>
+        </section>
+
+        <section class="screen" data-screen="chat">
+          <div class="status-bar">
+            <span>23:42</span>
+            <span class="status-icons"><svg><use href="#i-message"></use></svg><svg><use href="#i-file"></use></svg></span>
+          </div>
+          <div class="topbar">
+            <button class="icon-btn" type="button" aria-label="返回" data-go="chats"><svg><use href="#i-back"></use></svg></button>
+            <div class="topbar-title">
+              <h2>蓝莓</h2>
+              <span>在线 · AIM Android 测试</span>
+            </div>
+            <button class="icon-btn" type="button" aria-label="更多"><svg><use href="#i-more"></use></svg></button>
+          </div>
+          <div class="chat-body" id="chatBody">
+            <div class="day-mark">今天 23:12</div>
+            <div class="msg-row">
+              <div class="avatar small accent">蓝</div>
+              <div class="bubble">测试包打开后，聊天列表和输入框都正常。<span class="bubble-meta">23:13</span></div>
+            </div>
+            <div class="msg-row out">
+              <button class="bubble" type="button" data-menu="message">我这边再验证一下文件上传和返回键。<span class="bubble-meta">已读 23:15</span></button>
+            </div>
+            <div class="msg-row">
+              <div class="avatar small accent">蓝</div>
+              <div class="bubble">图片选择器能调起，但 Android 13 以上需要单独测权限。<span class="bubble-meta">23:17</span></div>
+            </div>
+            <div class="msg-row out">
+              <div class="image-bubble">上传预览图</div>
+            </div>
+            <div class="msg-row out">
+              <button class="bubble" type="button" data-menu="message">收到，先以测试包可用为准。<span class="bubble-meta">已读 23:20</span></button>
+            </div>
+          </div>
+          <form class="composer" id="chatComposer">
+            <button class="icon-btn" type="button" aria-label="添加附件" data-sheet="upload"><svg><use href="#i-plus"></use></svg></button>
+            <textarea aria-label="输入消息" id="chatText" placeholder="输入消息"></textarea>
+            <button class="send" type="submit">发送</button>
+          </form>
+        </section>
+
+        <section class="screen" data-screen="ai">
+          <div class="status-bar">
+            <span>23:42</span>
+            <span class="status-icons"><svg><use href="#i-spark"></use></svg><svg><use href="#i-file"></use></svg></span>
+          </div>
+          <div class="topbar">
+            <button class="icon-btn" type="button" aria-label="返回" data-go="chats"><svg><use href="#i-back"></use></svg></button>
+            <div class="topbar-title">
+              <h2>AIM 助手</h2>
+              <span>已连接自部署模型 · 上下文 12 条</span>
+            </div>
+            <button class="icon-btn" type="button" aria-label="设置"><svg><use href="#i-settings"></use></svg></button>
+          </div>
+          <div class="chat-body">
+            <div class="ai-status">
+              <strong>默认助手</strong>
+              <span>用于群聊总结、接口排查和部署说明。</span>
+            </div>
+            <div class="segment-row">
+              <button type="button" class="chip is-ai">总结聊天</button>
+              <button type="button" class="chip is-ai is-active">生成测试用例</button>
+              <button type="button" class="chip is-ai">解释报错</button>
+            </div>
+            <div class="msg-row out">
+              <div class="bubble">帮我整理一下安卓测试包需要验证的点。<span class="bubble-meta">23:21</span></div>
+            </div>
+            <div class="msg-row">
+              <div class="avatar small ai">AI</div>
+              <div class="bubble ai-bubble">建议按登录、会话、单聊、群聊、AI 流式回复、上传、断网重连、返回键八类验证。<span class="bubble-meta">AIM 助手</span></div>
+            </div>
+            <div class="streaming"><span class="cursor-dot"></span><span id="streamText">正在继续生成</span></div>
+            <div class="context-card">
+              <strong>引用上下文</strong>
+              <span>最近 3 条上传失败日志、当前 WebSocket 状态、用户测试服配置。</span>
+            </div>
+          </div>
+          <form class="composer" id="aiComposer">
+            <button class="icon-btn" type="button" aria-label="添加上下文"><svg><use href="#i-plus"></use></svg></button>
+            <textarea aria-label="向 AI 提问" id="aiText" placeholder="向 AIM 助手提问"></textarea>
+            <button class="send" type="submit">发送</button>
+          </form>
+        </section>
+
+        <section class="screen" data-screen="contacts">
+          <div class="status-bar">
+            <span>23:42</span>
+            <span class="status-icons"><svg><use href="#i-users"></use></svg><svg><use href="#i-file"></use></svg></span>
+          </div>
+          <div class="topbar simple">
+            <div class="topbar-title">
+              <h2>联系人</h2>
+              <span>好友 18 · 群组 4</span>
+            </div>
+            <button class="icon-btn" type="button" aria-label="添加联系人"><svg><use href="#i-plus"></use></svg></button>
+          </div>
+          <div class="page-scroll">
+            <div class="content">
+              <div class="search"><svg><use href="#i-search"></use></svg><span>搜索好友、群组</span></div>
+              <div class="segment-row">
+                <button type="button" class="chip is-active">好友</button>
+                <button type="button" class="chip">群组</button>
+                <button type="button" class="chip">申请</button>
+              </div>
+              <h3 class="section-title">常用联系人</h3>
+              <div class="contact-list">
+                <button type="button" class="contact-row" data-go="chat"><span class="avatar accent">蓝<span class="online-dot"></span></span><span class="row-main"><strong>蓝莓</strong><span>在线 · Android 测试</span></span></button>
+                <button type="button" class="contact-row" data-go="chat"><span class="avatar warn">王<span class="online-dot"></span></span><span class="row-main"><strong>王工</strong><span>后端 · WebSocket</span></span></button>
+                <button type="button" class="contact-row" data-go="chat"><span class="avatar">李</span><span class="row-main"><strong>李同学</strong><span>前端 · WebView</span></span></button>
+              </div>
+              <h3 class="section-title">群组</h3>
+              <div class="contact-list">
+                <button type="button" class="contact-row" data-go="chat"><span class="avatar">项</span><span class="row-main"><strong>AIM 项目组</strong><span>12 人 · 2 条未读</span></span></button>
+                <button type="button" class="contact-row" data-go="chat"><span class="avatar gray">测</span><span class="row-main"><strong>测试反馈群</strong><span>8 人 · 文件上传专项</span></span></button>
+              </div>
+            </div>
+          </div>
+          <nav class="bottom-nav" aria-label="主导航"></nav>
+        </section>
+
+        <section class="screen" data-screen="profile">
+          <div class="status-bar">
+            <span>23:42</span>
+            <span class="status-icons"><svg><use href="#i-user"></use></svg><svg><use href="#i-file"></use></svg></span>
+          </div>
+          <div class="topbar simple">
+            <div class="topbar-title">
+              <h2>我的</h2>
+              <span>测试包环境</span>
+            </div>
+            <button class="icon-btn" type="button" aria-label="设置"><svg><use href="#i-settings"></use></svg></button>
+          </div>
+          <div class="page-scroll">
+            <div class="content">
+              <div class="profile-card">
+                <span class="avatar">掌</span>
+                <span>
+                  <h3>掌柜的</h3>
+                  <span>ID 10001 · AIM 测试账号</span>
+                  <button class="chip is-active" type="button">在线</button>
+                </span>
+              </div>
+              <h3 class="section-title">服务状态</h3>
+              <div class="server-card">
+                <div class="server-line"><span>HTTP API</span><span class="state-ok">正常</span></div>
+                <div class="server-line"><span>WebSocket</span><span class="state-ok">已连接</span></div>
+                <div class="server-line"><span>上传目录</span><span class="state-wait">待测</span></div>
+              </div>
+              <h3 class="section-title">功能设置</h3>
+              <div class="settings-list">
+                <button type="button" class="setting-row"><span><strong>AI 助手配置</strong><span>模型、Key、知识库</span></span><svg width="18" height="18"><use href="#i-back"></use></svg></button>
+                <button type="button" class="setting-row"><span><strong>消息与存储</strong><span>缓存、离线消息、上传</span></span><svg width="18" height="18"><use href="#i-back"></use></svg></button>
+                <button type="button" class="setting-row"><span><strong>安全</strong><span>密码、Token、退出登录</span></span><svg width="18" height="18"><use href="#i-back"></use></svg></button>
+              </div>
+            </div>
+          </div>
+          <nav class="bottom-nav" aria-label="主导航"></nav>
+        </section>
+
+        <div class="sheet-dim" id="sheetDim"></div>
+        <section class="sheet" id="uploadSheet" aria-label="上传附件面板">
+          <div class="sheet-handle"></div>
+          <h3>添加到聊天</h3>
+          <p>测试包优先支持图片、拍照、文件和语音入口。</p>
+          <div class="upload-grid">
+            <button class="upload-action" type="button" data-upload="相册">
+              <span class="icon-square"><svg width="20" height="20"><use href="#i-photo"></use></svg></span>
+              <span><strong>相册</strong><span>图片消息</span></span>
+            </button>
+            <button class="upload-action" type="button" data-upload="拍照">
+              <span class="icon-square"><svg width="20" height="20"><use href="#i-camera"></use></svg></span>
+              <span><strong>拍照</strong><span>调起相机</span></span>
+            </button>
+            <button class="upload-action" type="button" data-upload="文件">
+              <span class="icon-square"><svg width="20" height="20"><use href="#i-file"></use></svg></span>
+              <span><strong>文件</strong><span>最大 50MB</span></span>
+            </button>
+            <button class="upload-action" type="button" data-upload="语音">
+              <span class="icon-square"><svg width="20" height="20"><use href="#i-mic"></use></svg></span>
+              <span><strong>语音</strong><span>后续实现</span></span>
+            </button>
+          </div>
+          <button class="primary-btn is-dark" type="button" id="closeSheet">取消</button>
+        </section>
+
+        <div class="context-menu" id="contextMenu">
+          <button type="button">复制</button>
+          <button type="button">引用回复</button>
+          <button type="button">撤回</button>
+        </div>
+        <div class="snackbar" id="snackbar"><span id="snackbarText">已保存</span><span>确定</span></div>
+      </div>
+    </section>
+
+    <aside class="context-panel" aria-label="触摸动效">
+      <h1>触摸动效</h1>
+      <p>动效以轻、短、可预期为主：页面滑入、气泡入场、底部面板、长按菜单、重连提示和 Snackbar 都已在原型中实现。</p>
+      <div class="flow-list">
+        <button type="button" data-demo="sheet">上传面板 <span>220ms</span></button>
+        <button type="button" data-demo="message">发送消息 <span>160ms</span></button>
+        <button type="button" data-demo="network">重连提示 <span>180ms</span></button>
+        <button type="button" data-demo="menu">长按菜单 <span>140ms</span></button>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const screens = [...document.querySelectorAll(".screen")];
+    const flowButtons = [...document.querySelectorAll("[data-jump]")];
+    const snackbar = document.getElementById("snackbar");
+    const snackbarText = document.getElementById("snackbarText");
+    const uploadSheet = document.getElementById("uploadSheet");
+    const sheetDim = document.getElementById("sheetDim");
+    const reconnect = document.getElementById("reconnect");
+    const contextMenu = document.getElementById("contextMenu");
+    const chatBody = document.getElementById("chatBody");
+
+    const navItems = [
+      { screen: "chats", label: "聊天", icon: "i-message" },
+      { screen: "contacts", label: "联系人", icon: "i-users" },
+      { screen: "ai", label: "AI", icon: "i-spark" },
+      { screen: "profile", label: "我的", icon: "i-user" }
+    ];
+
+    // 底部导航在多个页面复用，集中渲染避免重复维护状态。
+    document.querySelectorAll(".bottom-nav").forEach((nav) => {
+      nav.innerHTML = navItems.map((item) => `
+        <button class="nav-item" type="button" data-go="${item.screen}" data-screen="${item.screen}" aria-label="${item.label}">
+          <svg><use href="#${item.icon}"></use></svg>
+          <span>${item.label}</span>
+        </button>
+      `).join("");
+    });
+
+    function currentScreen() {
+      return document.querySelector(".screen.is-active")?.dataset.screen || "setup";
+    }
+
+    function setActiveScreen(target) {
+      const active = document.querySelector(".screen.is-active");
+      const next = document.querySelector(`.screen[data-screen="${target}"]`);
+      if (!next || active === next) return;
+
+      if (active) {
+        active.classList.add("is-exiting-left");
+        active.classList.remove("is-active");
+        window.setTimeout(() => active.classList.remove("is-exiting-left"), 240);
+      }
+      next.classList.add("is-active");
+
+      flowButtons.forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.jump === target);
+      });
+      document.querySelectorAll(".nav-item").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.go === target);
+      });
+    }
+
+    function showSnack(text) {
+      snackbarText.textContent = text;
+      snackbar.classList.add("is-showing");
+      window.clearTimeout(showSnack.timer);
+      showSnack.timer = window.setTimeout(() => snackbar.classList.remove("is-showing"), 1800);
+    }
+
+    function openSheet() {
+      sheetDim.classList.add("is-open");
+      uploadSheet.classList.add("is-open");
+    }
+
+    function closeSheet() {
+      sheetDim.classList.remove("is-open");
+      uploadSheet.classList.remove("is-open");
+    }
+
+    function sendMessage(targetBody, value, isAI = false) {
+      const text = value.trim();
+      if (!text) return false;
+      const row = document.createElement("div");
+      row.className = "msg-row out";
+      row.innerHTML = `<button class="bubble" type="button" data-menu="message">${text}<span class="bubble-meta">发送中</span></button>`;
+      targetBody.appendChild(row);
+      targetBody.scrollTo({ top: targetBody.scrollHeight, behavior: "smooth" });
+      window.setTimeout(() => {
+        const meta = row.querySelector(".bubble-meta");
+        if (meta) meta.textContent = isAI ? "已发送" : "已读";
+      }, 520);
+      return true;
+    }
+
+    document.addEventListener("click", (event) => {
+      const go = event.target.closest("[data-go]");
+      if (go) setActiveScreen(go.dataset.go);
+
+      const jump = event.target.closest("[data-jump]");
+      if (jump) setActiveScreen(jump.dataset.jump);
+
+      const sheetTrigger = event.target.closest("[data-sheet='upload']");
+      if (sheetTrigger) openSheet();
+
+      const upload = event.target.closest("[data-upload]");
+      if (upload) {
+        closeSheet();
+        showSnack(`${upload.dataset.upload}入口已选择`);
+      }
+
+      const demo = event.target.closest("[data-demo]");
+      if (demo) {
+        if (demo.dataset.demo === "sheet") openSheet();
+        if (demo.dataset.demo === "message") {
+          setActiveScreen("chat");
+          window.setTimeout(() => sendMessage(chatBody, "这是一条触摸动效演示消息。"), 220);
+        }
+        if (demo.dataset.demo === "network") {
+          reconnect.classList.add("is-showing");
+          window.setTimeout(() => reconnect.classList.remove("is-showing"), 1900);
+        }
+        if (demo.dataset.demo === "menu") {
+          setActiveScreen("chat");
+          window.setTimeout(() => openContextMenu(286, 452), 220);
+        }
+      }
+
+      if (!event.target.closest("#contextMenu") && !event.target.closest("[data-menu]")) {
+        contextMenu.classList.remove("is-open");
+      }
+    });
+
+    document.getElementById("closeSheet").addEventListener("click", closeSheet);
+    sheetDim.addEventListener("click", closeSheet);
+
+    document.getElementById("chatComposer").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = document.getElementById("chatText");
+      if (sendMessage(chatBody, input.value)) input.value = "";
+    });
+
+    document.getElementById("aiComposer").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = document.getElementById("aiText");
+      const aiBody = event.currentTarget.previousElementSibling;
+      if (sendMessage(aiBody, input.value, true)) {
+        input.value = "";
+        showSnack("AIM 助手正在生成回复");
+      }
+    });
+
+    function openContextMenu(x, y) {
+      contextMenu.style.left = `${Math.max(18, Math.min(228, x - 138))}px`;
+      contextMenu.style.top = `${Math.max(96, Math.min(680, y - 24))}px`;
+      contextMenu.classList.add("is-open");
+    }
+
+    let pressTimer = null;
+    document.addEventListener("pointerdown", (event) => {
+      const target = event.target.closest("[data-menu='message']");
+      if (!target) return;
+      pressTimer = window.setTimeout(() => openContextMenu(event.clientX, event.clientY), 430);
+    });
+
+    ["pointerup", "pointercancel", "pointermove"].forEach((type) => {
+      document.addEventListener(type, () => {
+        window.clearTimeout(pressTimer);
+      });
+    });
+
+    document.querySelectorAll(".chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const row = chip.parentElement;
+        if (!row?.classList.contains("segment-row")) return;
+        row.querySelectorAll(".chip").forEach((item) => item.classList.remove("is-active"));
+        chip.classList.add("is-active");
+      });
+    });
+
+    window.setInterval(() => {
+      if (currentScreen() !== "ai") return;
+      const streamingText = document.getElementById("streamText");
+      const states = ["正在继续生成", "正在继续生成 ·", "正在继续生成 ··", "正在继续生成 ···"];
+      const index = states.indexOf(streamingText.textContent);
+      streamingText.textContent = states[(index + 1) % states.length];
+    }, 620);
+
+    setActiveScreen("setup");
+  </script>
+</body>
+</html>
