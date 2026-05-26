@@ -2,7 +2,7 @@ package com.aim.app.core.push
 
 /**
  * 推送网关预留给后续厂商通道接入。
- * V0.1 测试包只保留契约，不直接依赖 FCM、华为、小米等具体 SDK。
+ * 当前测试包只保留契约，不直接依赖 FCM、华为、小米等具体 SDK。
  */
 interface PushGateway {
     suspend fun registerDevice(request: PushRegisterRequest): Result<PushRegisterResult>

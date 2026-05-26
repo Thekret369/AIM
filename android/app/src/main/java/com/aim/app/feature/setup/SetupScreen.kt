@@ -28,12 +28,16 @@ import com.aim.app.core.ui.AimColors
 import com.aim.app.core.ui.AimPrimaryButton
 import com.aim.app.core.ui.AimTextField
 import com.aim.app.core.ui.FilterChipRow
+import com.aim.app.core.config.ServerConfig
 
 @Composable
-fun SetupScreen(onSaved: () -> Unit) {
-    var serverUrl by rememberSaveable { mutableStateOf("http://192.168.1.8:8080") }
-    var websocketUrl by rememberSaveable { mutableStateOf("ws://192.168.1.8:8080/ws") }
-    var environment by rememberSaveable { mutableStateOf("局域网") }
+fun SetupScreen(
+    config: ServerConfig,
+    onSaved: (ServerConfig) -> Unit,
+) {
+    var serverUrl by rememberSaveable(config.apiBaseUrl) { mutableStateOf(config.apiBaseUrl) }
+    var websocketUrl by rememberSaveable(config.websocketUrl) { mutableStateOf(config.websocketUrl) }
+    var environment by rememberSaveable { mutableStateOf("公网测试服") }
 
     Column(
         modifier = Modifier
@@ -81,14 +85,17 @@ fun SetupScreen(onSaved: () -> Unit) {
         )
         Spacer(Modifier.height(20.dp))
         FilterChipRow(
-            items = listOf("局域网", "测试服", "公网 HTTPS"),
+            items = listOf("公网测试服", "局域网", "HTTPS"),
             selected = environment,
             onSelected = { environment = it },
         )
         Spacer(Modifier.height(20.dp))
         ConnectionCheckCard()
         Spacer(Modifier.height(36.dp))
-        AimPrimaryButton(text = "保存并进入登录", onClick = onSaved)
+        AimPrimaryButton(
+            text = "保存并进入登录",
+            onClick = { onSaved(ServerConfig.fromInput(serverUrl, websocketUrl)) },
+        )
     }
 }
 
@@ -104,7 +111,7 @@ private fun ConnectionCheckCard() {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("连接检查", color = AimColors.Text, fontWeight = FontWeight.Bold)
-            CheckLine("API /api/login", "通过", AimColors.Primary)
+            CheckLine("API /api/login", "待登录", AimColors.Warning)
             CheckLine("WebSocket 鉴权", "待登录", AimColors.Warning)
             CheckLine("文件上传目录", "待测试", AimColors.Warning)
         }

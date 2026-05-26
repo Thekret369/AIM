@@ -14,10 +14,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -26,17 +29,49 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aim.app.core.auth.AuthRepository
+import com.aim.app.core.auth.AuthSession
+import com.aim.app.core.config.ServerConfig
 import com.aim.app.core.ui.AimColors
 import com.aim.app.core.ui.AimPrimaryButton
 import com.aim.app.core.ui.AimTextField
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
-    onLogin: () -> Unit,
+    config: ServerConfig,
+    onLogin: (AuthSession) -> Unit,
     onChangeServer: () -> Unit,
 ) {
     var username by rememberSaveable { mutableStateOf("zhangsan") }
     var password by rememberSaveable { mutableStateOf("password") }
+    var errorMessage by rememberSaveable { mutableStateOf("") }
+    var isLoggingIn by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val authRepository = remember(config) { AuthRepository(config) }
+
+    fun submitLogin() {
+        val cleanUsername = username.trim()
+        if (cleanUsername.isBlank() || password.isBlank()) {
+            errorMessage = "请填写账号和密码"
+            return
+        }
+        if (isLoggingIn) return
+
+        isLoggingIn = true
+        errorMessage = ""
+        scope.launch {
+            authRepository.login(cleanUsername, password)
+                .onSuccess { session ->
+                    isLoggingIn = false
+                    onLogin(session)
+                }
+                .onFailure { error ->
+                    isLoggingIn = false
+                    errorMessage = error.message ?: "登录失败，请检查账号或服务器"
+                }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -65,8 +100,8 @@ fun LoginScreen(
         Spacer(Modifier.height(76.dp))
         AimTextField(label = "账号", value = username, onValueChange = { username = it })
         Spacer(Modifier.height(14.dp))
-        // V0.1 只做 UI，密码仍保存在本地状态中，不写入持久化存储。
-        androidx.compose.material3.OutlinedTextField(
+        // 连调包只在内存中保存输入内容，不做密码持久化。
+        OutlinedTextField(
             value = password,
             onValueChange = { password = it },
             modifier = Modifier.fillMaxWidth(),
@@ -76,7 +111,19 @@ fun LoginScreen(
             shape = RoundedCornerShape(8.dp),
         )
         Spacer(Modifier.height(20.dp))
-        AimPrimaryButton(text = "登录", onClick = onLogin)
+        AimPrimaryButton(
+            text = if (isLoggingIn) "登录中" else "登录",
+            enabled = !isLoggingIn,
+            onClick = { submitLogin() },
+        )
+        if (errorMessage.isNotBlank()) {
+            Text(
+                text = errorMessage,
+                color = AimColors.Danger,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
         Spacer(Modifier.height(12.dp))
         OutlinedButton(
             onClick = {},
@@ -96,7 +143,7 @@ fun LoginScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "当前服务器 192.168.1.8:8080",
+                text = "当前服务器 ${config.apiBaseUrl}",
                 modifier = Modifier.weight(1f),
                 color = AimColors.Muted,
                 fontSize = 12.sp,

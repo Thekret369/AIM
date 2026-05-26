@@ -161,10 +161,12 @@ fun AimPrimaryButton(
     text: String,
     modifier: Modifier = Modifier,
     dark: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp),

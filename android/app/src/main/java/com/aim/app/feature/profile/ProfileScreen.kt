@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aim.app.core.auth.AuthSession
 import com.aim.app.core.ui.AimAvatar
 import com.aim.app.core.ui.AimColors
 import com.aim.app.core.ui.AimMainScaffold
@@ -43,6 +44,7 @@ import com.aim.app.model.AimRoute
 fun ProfileScreen(
     currentRoute: AimRoute,
     onNavigate: (AimRoute) -> Unit,
+    session: AuthSession?,
 ) {
     var pushEnabled by rememberSaveable { mutableStateOf(true) }
     var betaUpdates by rememberSaveable { mutableStateOf(true) }
@@ -55,7 +57,7 @@ fun ProfileScreen(
         ) {
             item {
                 AimTopBar(title = "我的", subtitle = "测试包 · 内部渠道")
-                ProfileHeader()
+                ProfileHeader(session = session)
             }
             item {
                 ToggleRow(
@@ -88,7 +90,7 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun ProfileHeader() {
+private fun ProfileHeader(session: AuthSession?) {
     Card(
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = AimColors.Surface),
@@ -103,8 +105,17 @@ private fun ProfileHeader() {
         ) {
             AimAvatar(text = "测", color = AimColors.Primary, background = AimColors.PrimarySoft, online = true)
             Column(modifier = Modifier.weight(1f)) {
-                Text("测试账号", color = AimColors.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Text("com.aim.app.debug · v0.1.0-debug", color = AimColors.Muted, fontSize = 12.sp)
+                Text(
+                    text = session?.user?.displayName ?: "测试账号",
+                    color = AimColors.Text,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = session?.user?.username ?: "com.aim.app.debug · v0.2.0-debug",
+                    color = AimColors.Muted,
+                    fontSize = 12.sp,
+                )
             }
         }
     }
