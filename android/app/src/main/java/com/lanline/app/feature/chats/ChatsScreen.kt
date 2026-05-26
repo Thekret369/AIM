@@ -18,6 +18,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.lanline.app.core.realtime.RealtimeChatMessage
+import com.lanline.app.core.realtime.RealtimeConnectionState
 import com.lanline.app.core.ui.LanLineColors
 import com.lanline.app.core.ui.LanLineMainScaffold
 import com.lanline.app.core.ui.LanLineTopBar
@@ -32,11 +34,15 @@ import com.lanline.app.model.ConversationType
 fun ChatsScreen(
     currentRoute: LanLineRoute,
     onNavigate: (LanLineRoute) -> Unit,
+    realtimeState: RealtimeConnectionState,
+    realtimeMessages: List<RealtimeChatMessage>,
     onOpenChat: () -> Unit,
     onOpenAi: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf("全部") }
-    val conversations = LanLineSampleData.conversations.filter {
+    val liveConversation = realtimeMessages.lastOrNull()?.toConversation(realtimeMessages.size)
+    val sourceConversations = listOfNotNull(liveConversation) + LanLineSampleData.conversations
+    val conversations = sourceConversations.filter {
         when (selected) {
             "未读" -> it.unreadCount > 0
             "群聊" -> it.type == ConversationType.Group
@@ -64,7 +70,10 @@ fun ChatsScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
-                LanLineTopBar(title = "消息", subtitle = "5 个会话 · 2 人在线")
+                LanLineTopBar(
+                    title = "消息",
+                    subtitle = "${realtimeState.label} · ${realtimeMessages.size} 条实时消息",
+                )
                 SearchBox("搜索联系人、群聊或消息")
                 Spacer(Modifier.height(14.dp))
                 FilterChipRow(
@@ -86,3 +95,17 @@ fun ChatsScreen(
         }
     }
 }
+
+private fun RealtimeChatMessage.toConversation(unreadCount: Int) =
+    com.lanline.app.model.ConversationUi(
+        id = -1,
+        type = if (groupId != null && groupId > 0) ConversationType.Group else ConversationType.User,
+        title = conversationTitle,
+        avatarText = conversationTitle.take(1).ifBlank { "L" },
+        lastMessage = preview,
+        timeText = "刚刚",
+        unreadCount = unreadCount,
+        online = true,
+        accent = LanLineColors.Accent,
+        accentSoft = LanLineColors.AccentSoft,
+    )

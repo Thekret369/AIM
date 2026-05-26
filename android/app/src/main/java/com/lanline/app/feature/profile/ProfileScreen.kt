@@ -33,11 +33,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lanline.app.core.app.LanLineBuildInfo
 import com.lanline.app.core.auth.AuthSession
+import com.lanline.app.core.realtime.RealtimeConnectionState
 import com.lanline.app.core.ui.LanLineAvatar
 import com.lanline.app.core.ui.LanLineColors
 import com.lanline.app.core.ui.LanLineMainScaffold
 import com.lanline.app.core.ui.LanLineTopBar
+import com.lanline.app.core.update.AppUpdateInfo
+import com.lanline.app.core.update.UpdateRequirement
 import com.lanline.app.model.LanLineRoute
 
 @Composable
@@ -45,6 +49,8 @@ fun ProfileScreen(
     currentRoute: LanLineRoute,
     onNavigate: (LanLineRoute) -> Unit,
     session: AuthSession?,
+    realtimeState: RealtimeConnectionState,
+    updateInfo: AppUpdateInfo?,
 ) {
     var pushEnabled by rememberSaveable { mutableStateOf(true) }
     var betaUpdates by rememberSaveable { mutableStateOf(true) }
@@ -63,7 +69,7 @@ fun ProfileScreen(
                 ToggleRow(
                     icon = Icons.Default.Notifications,
                     title = "消息推送",
-                    subtitle = "接口已预留，后续接入厂商 Push token 上报",
+                    subtitle = "本地通知已接入，WebSocket 收到新消息会提醒",
                     checked = pushEnabled,
                     onCheckedChange = { pushEnabled = it },
                 )
@@ -72,7 +78,7 @@ fun ProfileScreen(
                 ToggleRow(
                     icon = Icons.Default.SystemUpdate,
                     title = "测试包更新",
-                    subtitle = "接口已预留，后续返回 APK 地址和强更策略",
+                    subtitle = updateInfo.describeUpdate(),
                     checked = betaUpdates,
                     onCheckedChange = { betaUpdates = it },
                 )
@@ -81,7 +87,7 @@ fun ProfileScreen(
                 LinkRow(
                     icon = Icons.Default.Sync,
                     title = "同步状态",
-                    subtitle = "本地 UI 演示 · 暂未连接真实后端",
+                    subtitle = "WebSocket ${realtimeState.label} · 版本接口已接入后端",
                 )
             }
             item { Spacer(Modifier.height(88.dp)) }
@@ -112,7 +118,7 @@ private fun ProfileHeader(session: AuthSession?) {
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = session?.user?.username ?: "com.lanline.app.debug · v0.3.0-debug",
+                    text = session?.user?.username ?: "com.lanline.app.debug · ${LanLineBuildInfo.VersionName}",
                     color = LanLineColors.Muted,
                     fontSize = 12.sp,
                 )
@@ -182,4 +188,15 @@ private fun LinkRow(
             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = LanLineColors.Subtle)
         }
     }
+}
+
+private fun AppUpdateInfo?.describeUpdate(): String {
+    if (this == null) return "正在检查版本 · 当前 ${LanLineBuildInfo.VersionName}"
+    if (!hasUpdate) return "已是最新 · 当前 ${LanLineBuildInfo.VersionName}"
+    val requirementText = when (requirement) {
+        UpdateRequirement.Required -> "强制更新"
+        UpdateRequirement.Recommended -> "建议更新"
+        UpdateRequirement.Optional -> "可选更新"
+    }
+    return "$requirementText · 最新 $latestVersionName"
 }

@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lanline.app.core.realtime.RealtimeChatMessage
 import com.lanline.app.core.ui.LanLineAvatar
 import com.lanline.app.core.ui.LanLineColors
 import com.lanline.app.core.ui.LanLinePrimaryButton
@@ -63,11 +64,18 @@ import com.lanline.app.model.MessageStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(onBack: () -> Unit) {
-    var messages by remember { mutableStateOf(LanLineSampleData.chatMessages) }
+fun ChatScreen(
+    onBack: () -> Unit,
+    realtimeMessages: List<RealtimeChatMessage>,
+    currentUserId: Long?,
+) {
+    var localMessages by remember { mutableStateOf<List<ChatMessageUi>>(emptyList()) }
     var input by rememberSaveable { mutableStateOf("") }
     var showAttachmentSheet by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val messages = remember(realtimeMessages, localMessages, currentUserId) {
+        LanLineSampleData.chatMessages + realtimeMessages.map { it.toChatMessage(currentUserId) } + localMessages
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -123,7 +131,7 @@ fun ChatScreen(onBack: () -> Unit) {
                 onSend = {
                     val text = input.trim()
                     if (text.isNotEmpty()) {
-                        messages = messages + ChatMessageUi(
+                        localMessages = localMessages + ChatMessageUi(
                             id = System.currentTimeMillis(),
                             content = text,
                             fromMe = true,
@@ -323,3 +331,16 @@ private fun UploadAction(
 
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
     this.clickable(onClick = onClick)
+
+private fun RealtimeChatMessage.toChatMessage(currentUserId: Long?): ChatMessageUi =
+    ChatMessageUi(
+        id = if (id > 0) RealtimeMessageIdOffset + id else receivedAtEpochMillis,
+        content = preview,
+        fromMe = currentUserId != null && fromUserId == currentUserId,
+        timeText = "实时",
+        status = MessageStatus.Sent,
+        isAi = conversationTitle.contains("AI", ignoreCase = true),
+        isImage = type == "image",
+    )
+
+private const val RealtimeMessageIdOffset = 1_000_000_000L

@@ -7,6 +7,9 @@ data class ServerConfig(
     val loginUrl: String
         get() = "${apiBaseUrl.trimEnd('/')}/api/login"
 
+    val androidUpdateUrl: String
+        get() = "${apiBaseUrl.trimEnd('/')}/api/app/android/latest"
+
     companion object {
         const val DefaultApiBaseUrl = "http://47.109.109.164:8080"
         const val DefaultWebSocketUrl = "ws://47.109.109.164:8080/ws"

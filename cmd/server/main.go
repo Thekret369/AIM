@@ -132,6 +132,7 @@ func main() {
 	chatH := &handler.ChatHandler{Svc: chatSvc, Hub: hub, JWTSecret: cfg.JWT.Secret}
 	settingsH := &handler.SettingsHandler{Svc: settingsSvc}
 	aiH := &handler.AIHandler{Svc: aiSvc}
+	appH := &handler.AppHandler{}
 
 	// 初始化文件上传器
 	uploader := storage.NewLocalUploader("./data/uploads")
@@ -159,6 +160,7 @@ func main() {
 		api.POST("/register", authH.Register)
 		api.POST("/login", authH.Login)
 		api.POST("/logout", authH.Logout)
+		api.GET("/app/android/latest", appH.GetAndroidLatest)
 	}
 
 	// WebSocket — 浏览器 WS 不支持 Header 认证，由 Handler 从 ?token= 自验 JWT
