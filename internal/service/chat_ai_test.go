@@ -549,6 +549,45 @@ func TestEnsureDefaultBotCreatesAIUser(t *testing.T) {
 	assertAcceptedFriendPair(t, existingUser.ID, bot.ID)
 }
 
+func TestSystemManagedBotUsesConfiguredDefaultModel(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	user := createSecurityUser(t, "fixed_model_user")
+	fake := &fakeAIClient{reply: "fixed reply", calls: make(chan ai.ChatRequest, 1)}
+	aiSvc := NewAIService(fake, chatSvc, AIConfig{
+		BaseURL:            "http://system-ai.local/v1",
+		APIKey:             "system-key",
+		DefaultModel:       "fixed-system-model",
+		DefaultBotUsername: "fixed_model_ai",
+		DefaultBotNickname: "Fixed AI",
+		Timeout:            time.Second,
+	})
+	bot, err := aiSvc.EnsureDefaultBot()
+	if err != nil {
+		t.Fatalf("ensure default bot: %v", err)
+	}
+	if err := model.DB.Model(&model.AIBot{}).
+		Where("user_id = ? AND is_system = ?", bot.ID, true).
+		Update("model", "deepseek-pro").Error; err != nil {
+		t.Fatalf("seed stale system model: %v", err)
+	}
+	chatSvc.AIResponder = aiSvc
+
+	toBot := bot.ID
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: user.ID,
+		ToUserID:   &toBot,
+		Content:    "hello fixed model",
+	}); err != nil {
+		t.Fatalf("send fixed model message: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	if req.Model != "fixed-system-model" {
+		t.Fatalf("expected configured default model, got %q", req.Model)
+	}
+}
+
 func TestEnsureDefaultBotAllowsEmptyProviderConfig(t *testing.T) {
 	chatSvc, _ := setupChatSecurityTest(t)
 	aiSvc := NewAIService(&fakeAIClient{}, chatSvc, AIConfig{
@@ -852,6 +891,7 @@ func TestSystemAPICustomBotBillsTokensAndUsesKnowledge(t *testing.T) {
 	bot, err := aiSvc.CreateUserBot(owner.ID, AIBotInput{
 		Name:             "系统分身",
 		APISource:        model.AIBotAPISourceSystem,
+		Model:            "billable-clone-model",
 		SystemPrompt:     "你是蓝妹分身。",
 		KnowledgeBaseIDs: []uint{kb.ID},
 	})
@@ -882,7 +922,7 @@ func TestSystemAPICustomBotBillsTokensAndUsesKnowledge(t *testing.T) {
 	}
 
 	req := waitAIRequest(t, fake.calls)
-	if req.BaseURL != "http://system-ai.local/v1" || req.APIKey != "system-key" || req.Model != "system-model" {
+	if req.BaseURL != "http://system-ai.local/v1" || req.APIKey != "system-key" || req.Model != "billable-clone-model" {
 		t.Fatalf("unexpected system api request: %+v", req)
 	}
 	if !strings.Contains(req.Messages[0].Content, "蓝妹应该称呼用户为掌柜的") {

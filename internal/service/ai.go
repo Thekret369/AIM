@@ -812,7 +812,12 @@ func (s *AIService) loadRuntimeByUser(user model.User) (*aiRuntime, error) {
 		if apiSource == model.AIBotAPISourceSystem {
 			baseURL = strings.TrimSpace(s.Config.BaseURL)
 			apiKey = strings.TrimSpace(s.Config.APIKey)
-			modelName = firstNonEmpty(bot.Model, s.Config.DefaultModel)
+			if bot.IsSystem {
+				// Built-in assistants are pinned to backend config; user-owned billable bots keep their chosen model.
+				modelName = strings.TrimSpace(s.Config.DefaultModel)
+			} else {
+				modelName = firstNonEmpty(bot.Model, s.Config.DefaultModel)
+			}
 		}
 		return &aiRuntime{
 			User:               user,
