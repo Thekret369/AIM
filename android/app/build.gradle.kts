@@ -7,15 +7,15 @@ plugins {
 }
 
 android {
-    namespace = "com.aim.app"
+    namespace = "com.lanline.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.aim.app"
+        applicationId = "com.lanline.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     buildTypes {

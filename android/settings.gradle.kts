@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AIMAndroid"
+rootProject.name = "LanLineAndroid"
 include(":app")

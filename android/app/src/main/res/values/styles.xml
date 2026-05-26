@@ -1,9 +1,9 @@
 <resources>
-    <style name="Theme.AIM" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.LanLine" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">#FFFFFF</item>
-        <item name="android:statusBarColor">#F6F7F9</item>
+        <item name="android:statusBarColor">#F7F9FC</item>
     </style>
 </resources>

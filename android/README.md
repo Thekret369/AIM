@@ -1,6 +1,6 @@
-# AIM Android
+# LanLine Android
 
-V0.2 安卓连调测试包工程。
+V0.3 LanLine 安卓连调测试包工程。
 
 ## 当前范围
 
