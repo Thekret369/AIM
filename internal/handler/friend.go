@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"AIM/internal/service"
-	"AIM/internal/ws"
+	"LanLine/internal/service"
+	"LanLine/internal/ws"
 
 	"github.com/gin-gonic/gin"
 )

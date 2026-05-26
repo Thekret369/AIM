@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"AIM/internal/model"
-	"AIM/pkg/ai"
-	appcrypto "AIM/pkg/crypto"
+	"LanLine/internal/model"
+	"LanLine/pkg/ai"
+	appcrypto "LanLine/pkg/crypto"
 )
 
 type fakeAIClient struct {
@@ -116,8 +116,8 @@ func TestAIUserDirectMessageCreatesReply(t *testing.T) {
 	}
 
 	req := waitAIRequest(t, fake.calls)
-	if req.Model != bot.AIModel {
-		t.Fatalf("expected model %s, got %s", bot.AIModel, req.Model)
+	if req.Model != bot.LanLineodel {
+		t.Fatalf("expected model %s, got %s", bot.LanLineodel, req.Model)
 	}
 	if req.BaseURL != bot.AIEndpoint {
 		t.Fatalf("expected endpoint %s, got %s", bot.AIEndpoint, req.BaseURL)
@@ -535,7 +535,7 @@ func TestEnsureDefaultBotCreatesAIUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure default bot: %v", err)
 	}
-	if !bot.IsAI || bot.Username != "default_ai" || bot.AIModel != "test-model" || bot.AIEndpoint != "http://ai.local/v1" {
+	if !bot.IsAI || bot.Username != "default_ai" || bot.LanLineodel != "test-model" || bot.AIEndpoint != "http://ai.local/v1" {
 		t.Fatalf("unexpected bot: %+v", bot)
 	}
 
@@ -1003,7 +1003,7 @@ func createAIUser(t *testing.T, username string) *model.User {
 		Password:       disabledAIPassword,
 		Nickname:       username,
 		IsAI:           true,
-		AIModel:        "test-model",
+		LanLineodel:    "test-model",
 		AIEndpoint:     "http://ai.local/v1",
 		AISystemPrompt: "system prompt",
 	}

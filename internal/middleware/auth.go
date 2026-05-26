@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"AIM/internal/model"
+	"LanLine/internal/model"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"

@@ -12,7 +12,9 @@ data/uploads/
 
 # 编译产物
 /aim
+/lanline
 aim.exe
+lanline.exe
 server.exe
 *.exe~
 *.out
@@ -33,3 +35,4 @@ logs/
 # Local build/cache artifacts
 data/go-build-cache/
 data/*.exe
+.codex_deploy/

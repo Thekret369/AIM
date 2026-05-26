@@ -1,4 +1,4 @@
-// AIM 即时通讯系统服务入口
+// LanLine 即时通讯系统服务入口
 // 启动 Gin HTTP 服务 + WebSocket Hub + 消息消费协程
 package main
 
@@ -12,14 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	"AIM/config"
-	"AIM/internal/handler"
-	"AIM/internal/middleware"
-	"AIM/internal/model"
-	"AIM/internal/service"
-	"AIM/internal/ws"
-	aipkg "AIM/pkg/ai"
-	"AIM/pkg/storage"
+	"LanLine/config"
+	"LanLine/internal/handler"
+	"LanLine/internal/middleware"
+	"LanLine/internal/model"
+	"LanLine/internal/service"
+	"LanLine/internal/ws"
+	aipkg "LanLine/pkg/ai"
+	"LanLine/pkg/storage"
 
 	"github.com/gin-gonic/gin"
 )
@@ -256,7 +256,7 @@ func main() {
 	}()
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("[server] AIM 服务启动于 http://%s", addr)
+	log.Printf("[server] LanLine 服务启动于 http://%s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("[server] 启动失败: %v", err)
 	}

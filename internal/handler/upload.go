@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"AIM/pkg/storage"
+	"LanLine/pkg/storage"
 
 	"github.com/gin-gonic/gin"
 )

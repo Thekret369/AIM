@@ -4,7 +4,7 @@ package service
 import (
 	"encoding/json"
 
-	"AIM/internal/model"
+	"LanLine/internal/model"
 
 	"gorm.io/datatypes"
 )

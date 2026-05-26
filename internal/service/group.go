@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"AIM/internal/model"
+	"LanLine/internal/model"
 
 	"gorm.io/gorm"
 )

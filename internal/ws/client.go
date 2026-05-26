@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"AIM/internal/model"
+	"LanLine/internal/model"
 
 	"github.com/gorilla/websocket"
 )

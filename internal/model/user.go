@@ -12,10 +12,10 @@ import (
 
 // UserSettings 用户偏好配置，以 JSON 形式存入 User.Settings 字段
 type UserSettings struct {
-	Theme        string `json:"theme"`          // "light" | "dark"
-	FontSize     string `json:"font_size"`      // "small" | "medium" | "large"
-	EnterToSend  bool   `json:"enter_to_send"`  // Enter 发送消息/换行
-	SoundEnabled bool   `json:"sound_enabled"`  // 消息提示音
+	Theme        string `json:"theme"`         // "light" | "dark"
+	FontSize     string `json:"font_size"`     // "small" | "medium" | "large"
+	EnterToSend  bool   `json:"enter_to_send"` // Enter 发送消息/换行
+	SoundEnabled bool   `json:"sound_enabled"` // 消息提示音
 }
 
 // DefaultSettings 返回新建用户/未配置时的默认设置
@@ -53,21 +53,21 @@ func ParseSettings(raw datatypes.JSON) *UserSettings {
 
 // User 用户模型
 type User struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Username  string    `gorm:"uniqueIndex;size:64;not null" json:"username"`
-	Password  string    `gorm:"size:256;not null" json:"-"` // bcrypt 哈希，json 不输出
-	Nickname  string    `gorm:"size:128" json:"nickname"`
-	Avatar    string    `gorm:"size:512" json:"avatar"`
-		Bio       string    `gorm:"size:512" json:"bio"` // 个人简介
+	ID       uint   `gorm:"primaryKey" json:"id"`
+	Username string `gorm:"uniqueIndex;size:64;not null" json:"username"`
+	Password string `gorm:"size:256;not null" json:"-"` // bcrypt 哈希，json 不输出
+	Nickname string `gorm:"size:128" json:"nickname"`
+	Avatar   string `gorm:"size:512" json:"avatar"`
+	Bio      string `gorm:"size:512" json:"bio"` // 个人简介
 
 	// IsAI 标记是否为 AI 用户，true 时不可通过普通注册创建
 	IsAI bool `gorm:"default:false" json:"is_ai"`
-	// AIModel 若为 AI 用户，记录其背后的模型名称（如 gpt-4 / qwen）
-	AIModel     string `gorm:"size:128;default:''" json:"ai_model,omitempty"`
+	// LanLineodel 若为 AI 用户，记录其背后的模型名称（如 gpt-4 / qwen）
+	LanLineodel string `gorm:"size:128;default:''" json:"ai_model,omitempty"`
 	// AISystemPrompt 若为 AI 用户，其行为约束的系统提示词
 	AISystemPrompt string `gorm:"type:text" json:"ai_system_prompt,omitempty"`
 	// AIEndpoint 若为 AI 用户，其对应的 API 端点
-	AIEndpoint  string `gorm:"size:512;default:''" json:"ai_endpoint,omitempty"`
+	AIEndpoint string `gorm:"size:512;default:''" json:"ai_endpoint,omitempty"`
 
 	// Settings 用户配置（JSON）：主题、字体、聊天偏好、隐私等
 	Settings datatypes.JSON `gorm:"type:json" json:"settings"`

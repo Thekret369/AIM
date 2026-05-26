@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"AIM/internal/model"
+	"LanLine/internal/model"
 
 	"gorm.io/gorm"
 )

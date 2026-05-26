@@ -1,8 +1,8 @@
-# AIM 安卓端测试包设计方案
+# LanLine 安卓端测试包设计方案
 
 ## 目标
 
-AIM 安卓端第一阶段只做测试包，不追求正式上架能力。目标是把现有 Go 服务端能力接入到安卓竖屏触摸端，先验证多人即时通讯、AI 助手和文件上传在移动端的核心体验。
+LanLine 安卓端第一阶段只做测试包，不追求正式上架能力。目标是把现有 Go 服务端能力接入到安卓竖屏触摸端，先验证多人即时通讯、AI 助手和文件上传在移动端的核心体验。
 
 本阶段不考虑正式推送，不接入厂商推送或 FCM。
 
@@ -56,9 +56,9 @@ AIM 安卓端第一阶段只做测试包，不追求正式上架能力。目标�
 ```text
 android/
 |-- app/
-|   |-- src/main/java/com/aim/app/
+|   |-- src/main/java/com/lanline/app/
 |   |   |-- MainActivity.kt
-|   |   |-- AimApp.kt
+|   |   |-- LanLineApp.kt
 |   |   |-- core/
 |   |   |   |-- config/
 |   |   |   |-- network/
@@ -102,7 +102,7 @@ android/
 
 ### 2. 登录页
 
-用途：使用现有 AIM 账号登录。
+用途：使用现有 LanLine 账号登录。
 
 核心控件：
 
@@ -273,7 +273,7 @@ data class AppConfig(
 ```kotlin
 sealed interface AuthState {
     data object Anonymous : AuthState
-    data class LoggedIn(val token: String, val user: AimUser) : AuthState
+    data class LoggedIn(val token: String, val user: LanLineUser) : AuthState
     data class Expired(val reason: String) : AuthState
 }
 ```
@@ -337,7 +337,7 @@ data class ChatMessage(
 安卓端建议封装：
 
 ```text
-AimWebSocketClient
+LanLineWebSocketClient
 |-- connect(token)
 |-- disconnect()
 |-- sendChat(message)
@@ -393,10 +393,10 @@ ChatRoute(conversationId, conversationType)
 ```bash
 adb devices
 ./gradlew :app:installDebug --console=plain
-adb -s <serial> shell cmd package resolve-activity --brief com.aim.app
-adb -s <serial> shell am start -n com.aim.app/.MainActivity
-adb -s <serial> exec-out screencap -p > /tmp/aim-android.png
-adb -s <serial> logcat -d > /tmp/aim-logcat.txt
+adb -s <serial> shell cmd package resolve-activity --brief com.lanline.app
+adb -s <serial> shell am start -n com.lanline.app/.MainActivity
+adb -s <serial> exec-out screencap -p > /tmp/lanline-android.png
+adb -s <serial> logcat -d > /tmp/lanline-logcat.txt
 ```
 
 ## 风险点
@@ -410,7 +410,7 @@ adb -s <serial> logcat -d > /tmp/aim-logcat.txt
 ## 下一步
 
 1. 确认是否采用 Kotlin + Jetpack Compose。
-2. 确认安卓包名，例如 `com.aim.app`。
+2. 确认安卓包名，例如 `com.lanline.app`。
 3. 确认最低 Android 版本。
 4. 确认 V0.1 是否只做本地 UI，还是直接接入登录接口。
 5. 确认后新建 `android/` 工程。

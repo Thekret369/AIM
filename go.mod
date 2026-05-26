@@ -1,4 +1,4 @@
-module AIM
+module LanLine
 
 go 1.25.1
 

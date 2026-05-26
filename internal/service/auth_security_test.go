@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"AIM/internal/middleware"
+	"LanLine/internal/middleware"
 )
 
 func TestChangePasswordRevokesExistingTokens(t *testing.T) {

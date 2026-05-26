@@ -1,4 +1,4 @@
-// Package crypto 提供 AIM 内部加密工具。
+// Package crypto 提供 LanLine 内部加密工具。
 package crypto
 
 import (

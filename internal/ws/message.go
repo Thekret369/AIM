@@ -6,7 +6,7 @@ package ws
 import (
 	"encoding/json"
 
-	"AIM/internal/model"
+	"LanLine/internal/model"
 )
 
 // WSMessageType 区分 WS 消息类型

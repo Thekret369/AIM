@@ -1,4 +1,4 @@
-// Package config loads and validates AIM runtime configuration.
+// Package config loads and validates LanLine runtime configuration.
 package config
 
 import (
@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-const insecureDefaultJWTSecret = "aim-secret-key-change-in-production"
+const insecureDefaultJWTSecret = "lanline-secret-key-change-in-production"
 
 // Server holds HTTP server configuration.
 type Server struct {
@@ -64,7 +64,7 @@ type Config struct {
 	AI       AI       `mapstructure:"ai"`
 }
 
-// Load reads config.yaml, applies AIM_* environment overrides, and validates it.
+// Load reads config.yaml, applies LANLINE_* environment overrides, and validates it.
 func Load(configDir string) (*Config, error) {
 	v := viper.New()
 	v.SetConfigName("config")
@@ -125,7 +125,7 @@ func (cfg *Config) Validate() error {
 	case cfg.JWT.Secret == "":
 		problems = append(problems, "jwt.secret 不能为空")
 	case cfg.JWT.Secret == insecureDefaultJWTSecret:
-		problems = append(problems, "jwt.secret 不能使用默认示例密钥，请通过 AIM_JWT_SECRET 覆盖")
+		problems = append(problems, "jwt.secret 不能使用默认示例密钥，请通过 LANLINE_JWT_SECRET 覆盖")
 	case len(cfg.JWT.Secret) < 16:
 		problems = append(problems, "jwt.secret 长度不能少于 16 个字符")
 	}
@@ -176,10 +176,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("database.driver", "sqlite")
-	v.SetDefault("database.dsn", "aim.db")
+	v.SetDefault("database.dsn", "lanline.db")
 	v.SetDefault("jwt.expire_hours", 72)
 	v.SetDefault("log.level", "info")
-	v.SetDefault("log.file", "logs/aim.log")
+	v.SetDefault("log.file", "logs/lanline.log")
 	v.SetDefault("ai.enabled", true)
 	v.SetDefault("ai.default_bot_username", "ai_assistant")
 	v.SetDefault("ai.default_bot_nickname", "蓝妹")
@@ -187,45 +187,45 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ai.max_context_messages", 12)
 	v.SetDefault("ai.temperature", 0.7)
 	v.SetDefault("ai.max_tokens", 1024)
-	v.SetDefault("ai.api_key_encrypt_key_env", "AIM_AI_API_KEY_ENCRYPT_KEY")
+	v.SetDefault("ai.api_key_encrypt_key_env", "LANLINE_AI_API_KEY_ENCRYPT_KEY")
 }
 
 func applyEnvOverrides(cfg *Config) error {
-	overrideStringFromEnv(&cfg.Server.Host, "AIM_SERVER_HOST")
-	if err := overrideIntFromEnv(&cfg.Server.Port, "AIM_SERVER_PORT"); err != nil {
+	overrideStringFromEnv(&cfg.Server.Host, "LANLINE_SERVER_HOST")
+	if err := overrideIntFromEnv(&cfg.Server.Port, "LANLINE_SERVER_PORT"); err != nil {
 		return err
 	}
-	overrideStringFromEnv(&cfg.Database.Driver, "AIM_DATABASE_DRIVER")
-	overrideStringFromEnv(&cfg.Database.DSN, "AIM_DATABASE_DSN")
-	overrideStringFromEnv(&cfg.JWT.Secret, "AIM_JWT_SECRET")
-	if err := overrideIntFromEnv(&cfg.JWT.ExpireHours, "AIM_JWT_EXPIRE_HOURS"); err != nil {
+	overrideStringFromEnv(&cfg.Database.Driver, "LANLINE_DATABASE_DRIVER")
+	overrideStringFromEnv(&cfg.Database.DSN, "LANLINE_DATABASE_DSN")
+	overrideStringFromEnv(&cfg.JWT.Secret, "LANLINE_JWT_SECRET")
+	if err := overrideIntFromEnv(&cfg.JWT.ExpireHours, "LANLINE_JWT_EXPIRE_HOURS"); err != nil {
 		return err
 	}
-	overrideStringFromEnv(&cfg.Log.Level, "AIM_LOG_LEVEL")
-	overrideStringFromEnv(&cfg.Log.File, "AIM_LOG_FILE")
+	overrideStringFromEnv(&cfg.Log.Level, "LANLINE_LOG_LEVEL")
+	overrideStringFromEnv(&cfg.Log.File, "LANLINE_LOG_FILE")
 
-	if err := overrideBoolFromEnv(&cfg.AI.Enabled, "AIM_AI_ENABLED"); err != nil {
+	if err := overrideBoolFromEnv(&cfg.AI.Enabled, "LANLINE_AI_ENABLED"); err != nil {
 		return err
 	}
-	overrideStringFromEnv(&cfg.AI.BaseURL, "AIM_AI_BASE_URL")
-	overrideStringFromEnv(&cfg.AI.APIKey, "AIM_AI_API_KEY")
-	overrideStringFromEnv(&cfg.AI.APIKeyEnv, "AIM_AI_API_KEY_ENV")
-	overrideStringFromEnv(&cfg.AI.APIKeyEncryptKey, "AIM_AI_API_KEY_ENCRYPT_KEY")
-	overrideStringFromEnv(&cfg.AI.APIKeyEncryptKeyEnv, "AIM_AI_API_KEY_ENCRYPT_KEY_ENV")
-	overrideStringFromEnv(&cfg.AI.DefaultModel, "AIM_AI_DEFAULT_MODEL")
-	overrideStringFromEnv(&cfg.AI.DefaultBotUsername, "AIM_AI_DEFAULT_BOT_USERNAME")
-	overrideStringFromEnv(&cfg.AI.DefaultBotNickname, "AIM_AI_DEFAULT_BOT_NICKNAME")
-	overrideStringFromEnv(&cfg.AI.SystemPrompt, "AIM_AI_SYSTEM_PROMPT")
-	if err := overrideIntFromEnv(&cfg.AI.TimeoutSeconds, "AIM_AI_TIMEOUT_SECONDS"); err != nil {
+	overrideStringFromEnv(&cfg.AI.BaseURL, "LANLINE_AI_BASE_URL")
+	overrideStringFromEnv(&cfg.AI.APIKey, "LANLINE_AI_API_KEY")
+	overrideStringFromEnv(&cfg.AI.APIKeyEnv, "LANLINE_AI_API_KEY_ENV")
+	overrideStringFromEnv(&cfg.AI.APIKeyEncryptKey, "LANLINE_AI_API_KEY_ENCRYPT_KEY")
+	overrideStringFromEnv(&cfg.AI.APIKeyEncryptKeyEnv, "LANLINE_AI_API_KEY_ENCRYPT_KEY_ENV")
+	overrideStringFromEnv(&cfg.AI.DefaultModel, "LANLINE_AI_DEFAULT_MODEL")
+	overrideStringFromEnv(&cfg.AI.DefaultBotUsername, "LANLINE_AI_DEFAULT_BOT_USERNAME")
+	overrideStringFromEnv(&cfg.AI.DefaultBotNickname, "LANLINE_AI_DEFAULT_BOT_NICKNAME")
+	overrideStringFromEnv(&cfg.AI.SystemPrompt, "LANLINE_AI_SYSTEM_PROMPT")
+	if err := overrideIntFromEnv(&cfg.AI.TimeoutSeconds, "LANLINE_AI_TIMEOUT_SECONDS"); err != nil {
 		return err
 	}
-	if err := overrideIntFromEnv(&cfg.AI.MaxContextMessages, "AIM_AI_MAX_CONTEXT_MESSAGES"); err != nil {
+	if err := overrideIntFromEnv(&cfg.AI.MaxContextMessages, "LANLINE_AI_MAX_CONTEXT_MESSAGES"); err != nil {
 		return err
 	}
-	if err := overrideFloatFromEnv(&cfg.AI.Temperature, "AIM_AI_TEMPERATURE"); err != nil {
+	if err := overrideFloatFromEnv(&cfg.AI.Temperature, "LANLINE_AI_TEMPERATURE"); err != nil {
 		return err
 	}
-	return overrideIntFromEnv(&cfg.AI.MaxTokens, "AIM_AI_MAX_TOKENS")
+	return overrideIntFromEnv(&cfg.AI.MaxTokens, "LANLINE_AI_MAX_TOKENS")
 }
 
 func overrideStringFromEnv(target *string, key string) {
@@ -279,7 +279,7 @@ func fillAIConfigFromEnv(cfg *Config) {
 			cfg.AI.APIKey = os.Getenv(cfg.AI.APIKeyEnv)
 		}
 		if cfg.AI.APIKey == "" {
-			cfg.AI.APIKey = os.Getenv("AIM_AI_API_KEY")
+			cfg.AI.APIKey = os.Getenv("LANLINE_AI_API_KEY")
 		}
 	}
 
@@ -288,7 +288,7 @@ func fillAIConfigFromEnv(cfg *Config) {
 			cfg.AI.APIKeyEncryptKey = os.Getenv(cfg.AI.APIKeyEncryptKeyEnv)
 		}
 		if cfg.AI.APIKeyEncryptKey == "" {
-			cfg.AI.APIKeyEncryptKey = os.Getenv("AIM_AI_API_KEY_ENCRYPT_KEY")
+			cfg.AI.APIKeyEncryptKey = os.Getenv("LANLINE_AI_API_KEY_ENCRYPT_KEY")
 		}
 	}
 }
