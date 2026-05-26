@@ -7,7 +7,7 @@ import (
 )
 
 func TestDatabaseDialectorDefaultsToSQLite(t *testing.T) {
-	_, driver, err := databaseDialector("", filepath.Join(t.TempDir(), "lanline.db"))
+	_, driver, err := databaseDialector("", filepath.Join(t.TempDir(), "aim.db"))
 	if err != nil {
 		t.Fatalf("databaseDialector failed: %v", err)
 	}
@@ -17,7 +17,7 @@ func TestDatabaseDialectorDefaultsToSQLite(t *testing.T) {
 }
 
 func TestDatabaseDialectorAcceptsMySQL(t *testing.T) {
-	_, driver, err := databaseDialector("mysql", "lanline:secret@tcp(localhost:3306)/lanline?parseTime=true&charset=utf8mb4")
+	_, driver, err := databaseDialector("mysql", "aim:secret@tcp(localhost:3306)/aim?parseTime=true&charset=utf8mb4")
 	if err != nil {
 		t.Fatalf("databaseDialector failed: %v", err)
 	}
@@ -27,14 +27,14 @@ func TestDatabaseDialectorAcceptsMySQL(t *testing.T) {
 }
 
 func TestDatabaseDialectorRejectsUnsupportedDriver(t *testing.T) {
-	_, _, err := databaseDialector("postgres", "postgres://localhost/lanline")
+	_, _, err := databaseDialector("postgres", "postgres://localhost/aim")
 	if err == nil || !strings.Contains(err.Error(), "unsupported database driver") {
 		t.Fatalf("expected unsupported driver error, got %v", err)
 	}
 }
 
 func TestInitDBSQLiteCreatesSchema(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "lanline.db")
+	dbPath := filepath.Join(t.TempDir(), "aim.db")
 	if err := InitDB("sqlite", dbPath); err != nil {
 		t.Fatalf("InitDB failed: %v", err)
 	}

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"sync"
 
-	"LanLine/internal/model"
+	"AIM/internal/model"
 )
 
 // Hub manages active WebSocket connections. A user can have multiple clients.

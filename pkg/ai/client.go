@@ -1,4 +1,4 @@
-// Package ai 为 LanLine 提供 AI 助手集成能力。
+// Package ai 为 AIM 提供 AI 助手集成能力。
 //
 // AI 以“虚拟用户”的形态接入系统，聊天服务只关心消息触发和投递，
 // 具体大模型厂商通过 Client 接口统一封装。
@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// Message 是 AI Agent 接收的 LanLine 消息抽象。
+// Message 是 AI Agent 接收的 AIM 消息抽象。
 type Message struct {
 	Type      string `json:"type"`         // text | image | file | audio
 	Content   string `json:"content"`      // 文本内容或文件 URL
@@ -27,7 +27,7 @@ type Message struct {
 	AtMention bool   `json:"at_mention"` // 是否被 @ 唤起
 }
 
-// Agent 描述运行在 LanLine 内的 AI 虚拟用户行为。
+// Agent 描述运行在 AIM 内的 AI 虚拟用户行为。
 type Agent interface {
 	ID() uint
 	Process(ctx context.Context, msg *Message) (reply string, err error)

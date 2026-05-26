@@ -1,4 +1,4 @@
-/* LanLine 即时通讯系统样式 */
+/* AIM 即时通讯系统样式 */
 
 /* ---- CSS 变量：主题与字体 ---- */
 :root {
@@ -1180,7 +1180,7 @@ body {
 .chat-input .send-btn:hover { background: var(--primary-hover); }
 
 /* ========================================
-   LanLine 视觉刷新：统一设计变量、组件密度和响应式体验
+   AIM 视觉刷新：统一设计变量、组件密度和响应式体验
    ======================================== */
 
 :root {
@@ -1332,8 +1332,7 @@ textarea:focus-visible {
 	backdrop-filter: blur(14px);
 }
 
-.nav > span,
-.brand-lockup {
+.nav > span {
 	display: inline-flex;
 	align-items: center;
 	gap: 10px;
@@ -1341,12 +1340,13 @@ textarea:focus-visible {
 	font-weight: 800;
 }
 
-.brand-lockup img {
+.nav > span::before {
+	content: "";
 	width: 28px;
 	height: 28px;
 	border-radius: 8px;
-	object-fit: cover;
-	background: var(--surface);
+	background:
+		linear-gradient(135deg, var(--primary), var(--accent));
 	box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
 }
 
@@ -2423,7 +2423,7 @@ body.theme-dark .no-chat-placeholder {
 }
 
 /* ========================================
-   LanLine 体验优先 UI：页面壳层、空状态和管理弹窗
+   AIM 体验优先 UI：页面壳层、空状态和管理弹窗
    ======================================== */
 
 .page-shell {
@@ -2637,14 +2637,6 @@ body.theme-dark .no-chat-placeholder {
 	font-size: 14px;
 	font-weight: 850;
 	box-shadow: 0 14px 28px rgba(37, 99, 235, 0.22);
-}
-
-.brand-mark img {
-	width: 100%;
-	height: 100%;
-	border-radius: inherit;
-	object-fit: cover;
-	background: #ffffff;
 }
 
 .auth-brand h1 {

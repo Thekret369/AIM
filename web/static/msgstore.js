@@ -1,8 +1,8 @@
-// LanLine 消息本地存储 — IndexedDB 封装
+// AIM 消息本地存储 — IndexedDB 封装
 // 提供消息离线缓存、增量同步元数据、已读状态持久化
 
 var msgStore = (function() {
-    var DB_NAME = 'LanLine';
+    var DB_NAME = 'AIM';
     var DB_VERSION = 1;
     var db = null;
 

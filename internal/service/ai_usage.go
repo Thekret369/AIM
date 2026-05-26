@@ -3,8 +3,8 @@ package service
 import (
 	"time"
 
-	"LanLine/internal/model"
-	"LanLine/pkg/ai"
+	"AIM/internal/model"
+	"AIM/pkg/ai"
 )
 
 type AITokenUsageInfo struct {

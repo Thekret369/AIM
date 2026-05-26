@@ -1,29 +1,29 @@
 services:
-  lanline:
+  aim:
     environment:
-      LANLINE_DATABASE_DRIVER: mysql
-      LANLINE_DATABASE_DSN: ${LANLINE_DATABASE_DSN:-lanline:lanline_local_password@tcp(mysql:3306)/lanline?charset=utf8mb4&parseTime=True&loc=Local}
+      AIM_DATABASE_DRIVER: mysql
+      AIM_DATABASE_DSN: ${AIM_DATABASE_DSN:-aim:aim_local_password@tcp(mysql:3306)/aim?charset=utf8mb4&parseTime=True&loc=Local}
     depends_on:
       mysql:
         condition: service_healthy
 
   mysql:
-    image: ${LANLINE_MYSQL_IMAGE:-mysql:8.4}
-    container_name: ${LANLINE_MYSQL_CONTAINER_NAME:-lanline-mysql}
+    image: ${AIM_MYSQL_IMAGE:-mysql:8.4}
+    container_name: ${AIM_MYSQL_CONTAINER_NAME:-aim-mysql}
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${LANLINE_MYSQL_DATABASE:-lanline}
-      MYSQL_USER: ${LANLINE_MYSQL_USER:-lanline}
-      MYSQL_PASSWORD: ${LANLINE_MYSQL_PASSWORD:-lanline_local_password}
-      MYSQL_ROOT_PASSWORD: ${LANLINE_MYSQL_ROOT_PASSWORD:-lanline_local_root_password}
+      MYSQL_DATABASE: ${AIM_MYSQL_DATABASE:-aim}
+      MYSQL_USER: ${AIM_MYSQL_USER:-aim}
+      MYSQL_PASSWORD: ${AIM_MYSQL_PASSWORD:-aim_local_password}
+      MYSQL_ROOT_PASSWORD: ${AIM_MYSQL_ROOT_PASSWORD:-aim_local_root_password}
       TZ: ${TZ:-Asia/Shanghai}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     ports:
-      - "${LANLINE_MYSQL_PORT:-3306}:3306"
+      - "${AIM_MYSQL_PORT:-3306}:3306"
     volumes:
-      - lanline_mysql:/var/lib/mysql
+      - aim_mysql:/var/lib/mysql
     healthcheck:
       test:
         - CMD-SHELL
@@ -38,13 +38,13 @@ services:
         max-size: "10m"
         max-file: "3"
     networks:
-      - lanline_net
+      - aim_net
 
 volumes:
-  lanline_mysql:
-    name: ${LANLINE_MYSQL_VOLUME:-lanline_mysql}
+  aim_mysql:
+    name: ${AIM_MYSQL_VOLUME:-aim_mysql}
 
 networks:
-  lanline_net:
-    name: ${LANLINE_NETWORK:-lanline_net}
+  aim_net:
+    name: ${AIM_NETWORK:-aim_net}
     driver: bridge

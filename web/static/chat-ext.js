@@ -1,4 +1,4 @@
-// LanLine 聊天增强：DOM 注入 + 输入状态/已读回执/在线状态
+// AIM 聊天增强：DOM 注入 + 输入状态/已读回执/在线状态
 // 依赖 app.js（sendWS / sendTyping / sendReadReceipt / onlineUsers）
 
 // 全局：消息已读用户追踪（群聊用）msgId → Set<userId>

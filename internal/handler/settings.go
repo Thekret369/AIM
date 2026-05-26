@@ -4,8 +4,8 @@ package handler
 import (
 	"net/http"
 
-	"LanLine/internal/model"
-	"LanLine/internal/service"
+	"AIM/internal/model"
+	"AIM/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

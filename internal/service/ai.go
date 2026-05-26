@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"LanLine/internal/model"
-	"LanLine/internal/ws"
-	"LanLine/pkg/ai"
-	appcrypto "LanLine/pkg/crypto"
+	"AIM/internal/model"
+	"AIM/internal/ws"
+	"AIM/pkg/ai"
+	appcrypto "AIM/pkg/crypto"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -181,7 +181,7 @@ func (s *AIService) EnsureDefaultBot() (*model.User, error) {
 			Password:       disabledAIPassword,
 			Nickname:       firstNonEmpty(s.Config.DefaultBotNickname, username),
 			IsAI:           true,
-			LanLineodel:    strings.TrimSpace(s.Config.DefaultModel),
+			AIModel:        strings.TrimSpace(s.Config.DefaultModel),
 			AISystemPrompt: strings.TrimSpace(s.Config.SystemPrompt),
 			AIEndpoint:     strings.TrimSpace(s.Config.BaseURL),
 		}
@@ -255,7 +255,7 @@ func (s *AIService) CreateUserBot(ownerID uint, input AIBotInput) (*AIBotInfo, e
 			Nickname:       input.Name,
 			Avatar:         input.Avatar,
 			IsAI:           true,
-			LanLineodel:    input.Model,
+			AIModel:        input.Model,
 			AISystemPrompt: input.SystemPrompt,
 			AIEndpoint:     input.BaseURL,
 		}
@@ -843,7 +843,7 @@ func (s *AIService) loadRuntimeByUser(user model.User) (*aiRuntime, error) {
 		APISource:     model.AIBotAPISourceThirdParty,
 		BaseURL:       firstNonEmpty(user.AIEndpoint, s.Config.BaseURL),
 		APIKey:        s.Config.APIKey,
-		Model:         firstNonEmpty(user.LanLineodel, s.Config.DefaultModel),
+		Model:         firstNonEmpty(user.AIModel, s.Config.DefaultModel),
 		SystemPrompt:  firstNonEmpty(user.AISystemPrompt, s.Config.SystemPrompt),
 		ContextLimit:  s.Config.MaxContextMessages,
 		Temperature:   s.Config.Temperature,
@@ -855,7 +855,7 @@ func (s *AIService) loadRuntimeByUser(user model.User) (*aiRuntime, error) {
 func (s *AIService) buildPrompt(runtime *aiRuntime, source *model.Message) ([]ai.ChatMessage, error) {
 	systemPrompt := runtime.SystemPrompt
 	if systemPrompt == "" {
-		systemPrompt = "你是 LanLine 内置 AI 助手，回答要简洁、准确。"
+		systemPrompt = "你是 AIM 内置 AI 助手，回答要简洁、准确。"
 	}
 	if source.IsToGroup() {
 		systemPrompt += "\n当前是群聊场景，请只回复本次 @ 你的用户，并避免主动读取无关隐私。"

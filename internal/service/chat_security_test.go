@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"LanLine/internal/model"
-	"LanLine/internal/ws"
+	"AIM/internal/model"
+	"AIM/internal/ws"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"

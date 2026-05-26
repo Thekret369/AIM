@@ -8,7 +8,7 @@ import (
 )
 
 func TestLoadAppliesEnvOverridesAndValidates(t *testing.T) {
-	clearLanLineEnv(t)
+	clearAIMEnv(t)
 	dir := t.TempDir()
 	writeConfig(t, dir, `
 server:
@@ -16,13 +16,13 @@ server:
   port: 8080
 database:
   driver: "sqlite"
-  dsn: "lanline.db"
+  dsn: "aim.db"
 jwt:
   secret: "unit-test-secret-123"
   expire_hours: 72
 log:
   level: "debug"
-  file: "logs/lanline.log"
+  file: "logs/aim.log"
 ai:
   enabled: true
   default_bot_username: "ai_assistant"
@@ -32,9 +32,9 @@ ai:
   max_tokens: 1024
 `)
 
-	t.Setenv("LANLINE_SERVER_PORT", "9090")
-	t.Setenv("LANLINE_DATABASE_DSN", "data/lanline.db")
-	t.Setenv("LANLINE_AI_ENABLED", "false")
+	t.Setenv("AIM_SERVER_PORT", "9090")
+	t.Setenv("AIM_DATABASE_DSN", "data/aim.db")
+	t.Setenv("AIM_AI_ENABLED", "false")
 
 	cfg, err := Load(dir)
 	if err != nil {
@@ -43,7 +43,7 @@ ai:
 	if cfg.Server.Port != 9090 {
 		t.Fatalf("expected env port override, got %d", cfg.Server.Port)
 	}
-	if cfg.Database.DSN != "data/lanline.db" {
+	if cfg.Database.DSN != "data/aim.db" {
 		t.Fatalf("expected env dsn override, got %q", cfg.Database.DSN)
 	}
 	if cfg.AI.Enabled {
@@ -92,16 +92,16 @@ func TestValidateRejectsUnsupportedDatabaseDriver(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidEnvType(t *testing.T) {
-	clearLanLineEnv(t)
+	clearAIMEnv(t)
 	dir := t.TempDir()
 	writeConfig(t, dir, `
 jwt:
   secret: "unit-test-secret-123"
 `)
-	t.Setenv("LANLINE_SERVER_PORT", "invalid")
+	t.Setenv("AIM_SERVER_PORT", "invalid")
 
 	_, err := Load(dir)
-	if err == nil || !strings.Contains(err.Error(), "LANLINE_SERVER_PORT") {
+	if err == nil || !strings.Contains(err.Error(), "AIM_SERVER_PORT") {
 		t.Fatalf("expected env parse error, got %v", err)
 	}
 }
@@ -114,7 +114,7 @@ func validConfig() Config {
 		},
 		Database: Database{
 			Driver: "sqlite",
-			DSN:    "lanline.db",
+			DSN:    "aim.db",
 		},
 		JWT: JWT{
 			Secret:      "unit-test-secret-123",
@@ -122,7 +122,7 @@ func validConfig() Config {
 		},
 		Log: Log{
 			Level: "info",
-			File:  "logs/lanline.log",
+			File:  "logs/aim.log",
 		},
 		AI: AI{
 			Enabled:            true,
@@ -142,31 +142,31 @@ func writeConfig(t *testing.T, dir string, content string) {
 	}
 }
 
-func clearLanLineEnv(t *testing.T) {
+func clearAIMEnv(t *testing.T) {
 	t.Helper()
 	keys := []string{
-		"LANLINE_SERVER_HOST",
-		"LANLINE_SERVER_PORT",
-		"LANLINE_DATABASE_DRIVER",
-		"LANLINE_DATABASE_DSN",
-		"LANLINE_JWT_SECRET",
-		"LANLINE_JWT_EXPIRE_HOURS",
-		"LANLINE_LOG_LEVEL",
-		"LANLINE_LOG_FILE",
-		"LANLINE_AI_ENABLED",
-		"LANLINE_AI_BASE_URL",
-		"LANLINE_AI_API_KEY",
-		"LANLINE_AI_API_KEY_ENV",
-		"LANLINE_AI_API_KEY_ENCRYPT_KEY",
-		"LANLINE_AI_API_KEY_ENCRYPT_KEY_ENV",
-		"LANLINE_AI_DEFAULT_MODEL",
-		"LANLINE_AI_DEFAULT_BOT_USERNAME",
-		"LANLINE_AI_DEFAULT_BOT_NICKNAME",
-		"LANLINE_AI_SYSTEM_PROMPT",
-		"LANLINE_AI_TIMEOUT_SECONDS",
-		"LANLINE_AI_MAX_CONTEXT_MESSAGES",
-		"LANLINE_AI_TEMPERATURE",
-		"LANLINE_AI_MAX_TOKENS",
+		"AIM_SERVER_HOST",
+		"AIM_SERVER_PORT",
+		"AIM_DATABASE_DRIVER",
+		"AIM_DATABASE_DSN",
+		"AIM_JWT_SECRET",
+		"AIM_JWT_EXPIRE_HOURS",
+		"AIM_LOG_LEVEL",
+		"AIM_LOG_FILE",
+		"AIM_AI_ENABLED",
+		"AIM_AI_BASE_URL",
+		"AIM_AI_API_KEY",
+		"AIM_AI_API_KEY_ENV",
+		"AIM_AI_API_KEY_ENCRYPT_KEY",
+		"AIM_AI_API_KEY_ENCRYPT_KEY_ENV",
+		"AIM_AI_DEFAULT_MODEL",
+		"AIM_AI_DEFAULT_BOT_USERNAME",
+		"AIM_AI_DEFAULT_BOT_NICKNAME",
+		"AIM_AI_SYSTEM_PROMPT",
+		"AIM_AI_TIMEOUT_SECONDS",
+		"AIM_AI_MAX_CONTEXT_MESSAGES",
+		"AIM_AI_TEMPERATURE",
+		"AIM_AI_MAX_TOKENS",
 	}
 	for _, key := range keys {
 		t.Setenv(key, "")

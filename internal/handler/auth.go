@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"LanLine/internal/service"
+	"AIM/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

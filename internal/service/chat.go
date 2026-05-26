@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"LanLine/internal/model"
-	"LanLine/internal/ws"
+	"AIM/internal/model"
+	"AIM/internal/ws"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

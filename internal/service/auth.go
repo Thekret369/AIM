@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"LanLine/internal/middleware"
-	"LanLine/internal/model"
+	"AIM/internal/middleware"
+	"AIM/internal/model"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"

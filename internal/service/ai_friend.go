@@ -1,7 +1,7 @@
 package service
 
 import (
-	"LanLine/internal/model"
+	"AIM/internal/model"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

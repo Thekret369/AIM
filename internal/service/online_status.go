@@ -1,6 +1,6 @@
 package service
 
-import "LanLine/internal/model"
+import "AIM/internal/model"
 
 // StatusVisibleUserIDs returns users allowed to receive userID's online status.
 func StatusVisibleUserIDs(userID uint) ([]uint, error) {

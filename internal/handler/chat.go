@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"LanLine/internal/middleware"
-	"LanLine/internal/model"
-	"LanLine/internal/service"
-	"LanLine/internal/ws"
+	"AIM/internal/middleware"
+	"AIM/internal/model"
+	"AIM/internal/service"
+	"AIM/internal/ws"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"

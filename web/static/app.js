@@ -1,39 +1,39 @@
-// LanLine 前端工具函数 — 封装 API 请求和 WebSocket
+// AIM 前端工具函数 — 封装 API 请求和 WebSocket
 
 // ========================================
 // Token 管理
 // ========================================
 
 function getToken() {
-    return sessionStorage.getItem('lanline_token');
+    return sessionStorage.getItem('aim_token');
 }
 
 function setToken(t) {
-    sessionStorage.setItem('lanline_token', t);
+    sessionStorage.setItem('aim_token', t);
 }
 
 function getUsername() {
-    return sessionStorage.getItem('lanline_username');
+    return sessionStorage.getItem('aim_username');
 }
 
 function setUsername(u) {
-    sessionStorage.setItem('lanline_username', u);
+    sessionStorage.setItem('aim_username', u);
 }
 
 function getUserId() {
-    return parseInt(sessionStorage.getItem('lanline_user_id') || '0');
+    return parseInt(sessionStorage.getItem('aim_user_id') || '0');
 }
 
 function setUserId(id) {
-    sessionStorage.setItem('lanline_user_id', id);
+    sessionStorage.setItem('aim_user_id', id);
 }
 
 function getUserNickname() {
-    return sessionStorage.getItem('lanline_nickname') || getUsername();
+    return sessionStorage.getItem('aim_nickname') || getUsername();
 }
 
 function setUserNickname(n) {
-    sessionStorage.setItem('lanline_nickname', n);
+    sessionStorage.setItem('aim_nickname', n);
 }
 
 function checkAuth() {
@@ -46,10 +46,10 @@ function checkAuth() {
 
 async function logout() {
     try { await api('POST', '/logout', {}); } catch(e) {}
-    sessionStorage.removeItem('lanline_token');
-    sessionStorage.removeItem('lanline_username');
-    sessionStorage.removeItem('lanline_user_id');
-    sessionStorage.removeItem('lanline_nickname');
+    sessionStorage.removeItem('aim_token');
+    sessionStorage.removeItem('aim_username');
+    sessionStorage.removeItem('aim_user_id');
+    sessionStorage.removeItem('aim_nickname');
     window.location.href = '/login';
 }
 

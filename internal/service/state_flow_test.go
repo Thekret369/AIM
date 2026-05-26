@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"LanLine/internal/model"
+	"AIM/internal/model"
 )
 
 func TestHandleRequestAcceptsExistingReverseWithoutDuplicate(t *testing.T) {
