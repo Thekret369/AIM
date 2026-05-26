@@ -11,7 +11,7 @@ data/uploads/
 *.db
 
 # 编译产物
-aim
+/aim
 aim.exe
 server.exe
 *.exe~
