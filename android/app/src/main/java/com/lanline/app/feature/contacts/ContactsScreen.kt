@@ -38,33 +38,19 @@ import com.lanline.app.core.ui.LanLineMainScaffold
 import com.lanline.app.core.ui.LanLineTopBar
 import com.lanline.app.core.ui.FilterChipRow
 import com.lanline.app.core.ui.SearchBox
+import com.lanline.app.model.ContactUi
 import com.lanline.app.model.LanLineRoute
-
-private data class ContactUi(
-    val id: Long,
-    val name: String,
-    val avatar: String,
-    val subtitle: String,
-    val group: String,
-    val online: Boolean,
-)
-
-private val contactItems = listOf(
-    ContactUi(1, "蓝莓", "蓝", "产品确认中 · 2 条未读", "好友", true),
-    ContactUi(2, "王工", "王", "WebSocket 联调", "好友", true),
-    ContactUi(3, "LanLine 项目组", "项", "8 人 · 后端测试服", "群聊", false),
-    ContactUi(4, "测试公告", "测", "只读通知频道", "群聊", false),
-    ContactUi(5, "LanLine 助手", "AI", "可在聊天内唤起", "AI", true),
-)
 
 @Composable
 fun ContactsScreen(
     currentRoute: LanLineRoute,
     onNavigate: (LanLineRoute) -> Unit,
-    onOpenChat: () -> Unit,
+    contacts: List<ContactUi>,
+    backendStatus: String,
+    onOpenChat: (ContactUi) -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf("全部") }
-    val contacts = contactItems.filter { selected == "全部" || it.group == selected }
+    val filteredContacts = contacts.filter { selected == "全部" || it.group == selected }
 
     LanLineMainScaffold(currentRoute = currentRoute, onNavigate = onNavigate) { padding ->
         LazyColumn(
@@ -75,7 +61,7 @@ fun ContactsScreen(
             item {
                 LanLineTopBar(
                     title = "联系人",
-                    subtitle = "5 个联系人 · 2 人在线",
+                    subtitle = backendStatus,
                     trailing = {
                         IconButton(onClick = {}) {
                             Icon(Icons.Default.PersonAdd, contentDescription = "添加联系人")
@@ -91,8 +77,17 @@ fun ContactsScreen(
                     onSelected = { selected = it },
                 )
             }
-            items(contacts, key = { it.id }) { contact ->
-                ContactRow(contact = contact, onClick = onOpenChat)
+            if (filteredContacts.isEmpty()) {
+                item {
+                    Text(
+                        text = "暂无后端联系人数据，请先在网页端或服务端创建好友、群组或 AI 助手。",
+                        color = LanLineColors.Muted,
+                        modifier = Modifier.padding(top = 18.dp),
+                    )
+                }
+            }
+            items(filteredContacts, key = { "${it.group}:${it.id}" }) { contact ->
+                ContactRow(contact = contact, onClick = { onOpenChat(contact) })
             }
             item { Spacer(Modifier.height(88.dp)) }
         }

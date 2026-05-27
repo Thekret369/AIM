@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,8 +28,8 @@ import com.lanline.app.core.ui.ConversationRow
 import com.lanline.app.core.ui.FilterChipRow
 import com.lanline.app.core.ui.SearchBox
 import com.lanline.app.model.LanLineRoute
-import com.lanline.app.model.LanLineSampleData
 import com.lanline.app.model.ConversationType
+import com.lanline.app.model.ConversationUi
 
 @Composable
 fun ChatsScreen(
@@ -36,13 +37,15 @@ fun ChatsScreen(
     onNavigate: (LanLineRoute) -> Unit,
     realtimeState: RealtimeConnectionState,
     realtimeMessages: List<RealtimeChatMessage>,
-    onOpenChat: () -> Unit,
+    conversations: List<ConversationUi>,
+    backendStatus: String,
+    onOpenChat: (ConversationUi) -> Unit,
     onOpenAi: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf("全部") }
     val liveConversation = realtimeMessages.lastOrNull()?.toConversation(realtimeMessages.size)
-    val sourceConversations = listOfNotNull(liveConversation) + LanLineSampleData.conversations
-    val conversations = sourceConversations.filter {
+    val sourceConversations = listOfNotNull(liveConversation) + conversations
+    val filteredConversations = sourceConversations.filter {
         when (selected) {
             "未读" -> it.unreadCount > 0
             "群聊" -> it.type == ConversationType.Group
@@ -72,7 +75,7 @@ fun ChatsScreen(
             item {
                 LanLineTopBar(
                     title = "消息",
-                    subtitle = "${realtimeState.label} · ${realtimeMessages.size} 条实时消息",
+                    subtitle = "${realtimeState.label} · $backendStatus",
                 )
                 SearchBox("搜索联系人、群聊或消息")
                 Spacer(Modifier.height(14.dp))
@@ -83,11 +86,20 @@ fun ChatsScreen(
                     onSelected = { selected = it },
                 )
             }
-            items(conversations, key = { it.id }) { conversation ->
+            if (filteredConversations.isEmpty()) {
+                item {
+                    Text(
+                        text = "暂无后端会话数据，请确认账号已有好友、群组或 AI 助手。",
+                        color = LanLineColors.Muted,
+                        modifier = Modifier.padding(top = 18.dp),
+                    )
+                }
+            }
+            items(filteredConversations, key = { "${it.type}:${it.id}" }) { conversation ->
                 ConversationRow(
                     conversation = conversation,
                     onClick = {
-                        if (conversation.type == ConversationType.Ai) onOpenAi() else onOpenChat()
+                        if (conversation.type == ConversationType.Ai) onOpenAi() else onOpenChat(conversation)
                     },
                 )
             }

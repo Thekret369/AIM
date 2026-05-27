@@ -9,6 +9,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONArray
 import org.json.JSONObject
 
 class LanLineRealtimeClient(
@@ -37,6 +38,30 @@ class LanLineRealtimeClient(
         onStateChange(RealtimeConnectionState.Closed)
     }
 
+    fun sendChat(payload: JSONObject, requestId: String = nextRequestId()): Boolean =
+        sendWrapped("chat", requestId, payload)
+
+    fun sendTyping(toUserId: Long = 0, groupId: Long = 0, isTyping: Boolean): Boolean =
+        sendWrapped(
+            "typing",
+            nextRequestId(),
+            JSONObject()
+                .put("to_user_id", toUserId)
+                .put("group_id", groupId)
+                .put("is_typing", isTyping),
+        )
+
+    fun sendReadReceipt(peerUserId: Long = 0, groupId: Long = 0, messageIds: List<Long> = emptyList(), lastReadMsgId: Long = 0): Boolean =
+        sendWrapped(
+            "read_receipt",
+            nextRequestId(),
+            JSONObject()
+                .put("peer_user_id", peerUserId)
+                .put("group_id", groupId)
+                .put("message_ids", JSONArray(messageIds))
+                .put("last_read_msg_id", lastReadMsgId),
+        )
+
     private fun openSocket(state: RealtimeConnectionState) {
         onStateChange(state)
         val request = Request.Builder()
@@ -44,6 +69,18 @@ class LanLineRealtimeClient(
             .build()
         webSocket = client.newWebSocket(request, listener())
     }
+
+    private fun sendWrapped(type: String, requestId: String, payload: JSONObject): Boolean {
+        val message = JSONObject()
+            .put("type", type)
+            .put("request_id", requestId)
+            .put("payload", payload)
+            .toString()
+        return webSocket?.send(message) == true
+    }
+
+    private fun nextRequestId(): String =
+        "${System.currentTimeMillis().toString(36)}-${++requestSeq}"
 
     private fun listener(): WebSocketListener =
         object : WebSocketListener() {
@@ -111,5 +148,6 @@ class LanLineRealtimeClient(
 
     companion object {
         private const val NormalClosureCode = 1000
+        private var requestSeq = 0
     }
 }

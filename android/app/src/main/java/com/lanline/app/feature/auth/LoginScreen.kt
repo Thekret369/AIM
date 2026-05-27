@@ -43,8 +43,8 @@ fun LoginScreen(
     onLogin: (AuthSession) -> Unit,
     onChangeServer: () -> Unit,
 ) {
-    var username by rememberSaveable { mutableStateOf("zhangsan") }
-    var password by rememberSaveable { mutableStateOf("password") }
+    var username by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
     var errorMessage by rememberSaveable { mutableStateOf("") }
     var isLoggingIn by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()

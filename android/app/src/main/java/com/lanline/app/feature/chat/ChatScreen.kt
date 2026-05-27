@@ -58,23 +58,38 @@ import com.lanline.app.core.ui.LanLineAvatar
 import com.lanline.app.core.ui.LanLineColors
 import com.lanline.app.core.ui.LanLinePrimaryButton
 import com.lanline.app.core.ui.LanLineTopBar
-import com.lanline.app.model.LanLineSampleData
 import com.lanline.app.model.ChatMessageUi
+import com.lanline.app.model.ConversationType
+import com.lanline.app.model.ConversationUi
 import com.lanline.app.model.MessageStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     onBack: () -> Unit,
+    conversation: ConversationUi?,
+    historyMessages: List<ChatMessageUi>,
+    historyStatus: String,
     realtimeMessages: List<RealtimeChatMessage>,
     currentUserId: Long?,
+    onSendText: (ConversationUi, String) -> Boolean,
 ) {
     var localMessages by remember { mutableStateOf<List<ChatMessageUi>>(emptyList()) }
     var input by rememberSaveable { mutableStateOf("") }
     var showAttachmentSheet by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val messages = remember(realtimeMessages, localMessages, currentUserId) {
-        LanLineSampleData.chatMessages + realtimeMessages.map { it.toChatMessage(currentUserId) } + localMessages
+    val liveMessages = remember(realtimeMessages, conversation, currentUserId) {
+        realtimeMessages
+            .filter { message -> conversation != null && message.belongsTo(conversation, currentUserId) }
+            .map { it.toChatMessage(currentUserId) }
+    }
+    val messages = remember(historyMessages, liveMessages, localMessages) {
+        (historyMessages + liveMessages + localMessages).distinctBy { it.id }
+    }
+
+    LaunchedEffect(conversation?.type, conversation?.id) {
+        localMessages = emptyList()
+        input = ""
     }
 
     LaunchedEffect(messages.size) {
@@ -90,8 +105,8 @@ fun ChatScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             LanLineTopBar(
-                title = "蓝莓",
-                subtitle = "在线 · LanLine Android 测试",
+                title = conversation?.title ?: "会话",
+                subtitle = historyStatus,
                 leading = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -112,12 +127,27 @@ fun ChatScreen(
             ) {
                 item {
                     Text(
-                        text = "今天 23:12",
+                        text = if (conversation == null) "未选择会话" else "后端历史 + 实时消息",
                         modifier = Modifier.fillMaxWidth(),
                         color = LanLineColors.Subtle,
                         fontSize = 11.sp,
                         textAlign = TextAlign.Center,
                     )
+                }
+                if (messages.isEmpty()) {
+                    item {
+                        Text(
+                            text = if (conversation == null) {
+                                "请先从消息或联系人列表进入一个会话。"
+                            } else {
+                                "暂无后端消息，发送或收到 WebSocket 消息后会显示在这里。"
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = LanLineColors.Muted,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
                 items(messages, key = { it.id }) { message ->
                     MessageBubble(message)
@@ -126,19 +156,22 @@ fun ChatScreen(
             }
             ChatComposer(
                 value = input,
+                enabled = conversation != null && conversation.type != ConversationType.Broadcast,
                 onValueChange = { input = it },
                 onAttachment = { showAttachmentSheet = true },
                 onSend = {
+                    val activeConversation = conversation ?: return@ChatComposer
                     val text = input.trim()
                     if (text.isNotEmpty()) {
+                        val sent = onSendText(activeConversation, text)
                         localMessages = localMessages + ChatMessageUi(
                             id = System.currentTimeMillis(),
                             content = text,
                             fromMe = true,
                             timeText = "刚刚",
-                            status = MessageStatus.Read,
+                            status = if (sent) MessageStatus.Sent else MessageStatus.Failed,
                         )
-                        input = ""
+                        if (sent) input = ""
                     }
                 },
             )
@@ -168,7 +201,7 @@ private fun MessageBubble(message: ChatMessageUi) {
     ) {
         if (!message.fromMe) {
             LanLineAvatar(
-                text = if (message.isAi) "AI" else "蓝",
+                text = if (message.isAi) "AI" else "L",
                 modifier = Modifier.size(34.dp),
                 color = if (message.isAi) LanLineColors.Ai else LanLineColors.Accent,
                 background = if (message.isAi) LanLineColors.AiSoft else LanLineColors.AccentSoft,
@@ -201,7 +234,7 @@ private fun MessageBubble(message: ChatMessageUi) {
                             .background(LanLineColors.AccentSoft),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("上传预览图", color = LanLineColors.Accent, fontWeight = FontWeight.Bold)
+                        Text("图片消息", color = LanLineColors.Accent, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Text(
@@ -226,6 +259,7 @@ private fun MessageBubble(message: ChatMessageUi) {
 @Composable
 private fun ChatComposer(
     value: String,
+    enabled: Boolean,
     onValueChange: (String) -> Unit,
     onAttachment: () -> Unit,
     onSend: () -> Unit,
@@ -241,6 +275,7 @@ private fun ChatComposer(
     ) {
         IconButton(
             onClick = onAttachment,
+            enabled = enabled,
             modifier = Modifier
                 .size(42.dp)
                 .border(1.dp, LanLineColors.Line, RoundedCornerShape(8.dp)),
@@ -250,13 +285,15 @@ private fun ChatComposer(
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
+            enabled = enabled,
             modifier = Modifier.weight(1f),
-            placeholder = { Text("输入消息") },
+            placeholder = { Text(if (enabled) "输入消息" else "当前会话暂不可发送") },
             singleLine = true,
             shape = RoundedCornerShape(8.dp),
         )
         Button(
             onClick = onSend,
+            enabled = enabled,
             modifier = Modifier
                 .width(62.dp)
                 .height(48.dp),
@@ -282,7 +319,7 @@ private fun AttachmentSheetContent(
     ) {
         Text("添加到聊天", color = LanLineColors.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Text(
-            text = "测试包优先支持图片、拍照、文件和语音入口。",
+            text = "图片、拍照、文件和语音入口已保留，文件上传使用 /api/upload 接口。",
             color = LanLineColors.Muted,
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 8.dp, bottom = 18.dp),
@@ -293,8 +330,8 @@ private fun AttachmentSheetContent(
         }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            UploadAction("文件", "最大 50MB", Icons.Default.InsertDriveFile, Modifier.weight(1f), onSelected)
-            UploadAction("语音", "后续实现", Icons.Default.Mic, Modifier.weight(1f), onSelected)
+            UploadAction("文件", "走上传接口", Icons.Default.InsertDriveFile, Modifier.weight(1f), onSelected)
+            UploadAction("语音", "入口保留", Icons.Default.Mic, Modifier.weight(1f), onSelected)
         }
         Spacer(Modifier.height(18.dp))
         LanLinePrimaryButton(text = "取消", dark = true, onClick = onCancel)
@@ -331,6 +368,16 @@ private fun UploadAction(
 
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
     this.clickable(onClick = onClick)
+
+private fun RealtimeChatMessage.belongsTo(conversation: ConversationUi, currentUserId: Long?): Boolean =
+    when (conversation.type) {
+        ConversationType.Group -> groupId == conversation.id
+        ConversationType.User, ConversationType.Ai ->
+            fromUserId == conversation.id ||
+                toUserId == conversation.id ||
+                (currentUserId != null && fromUserId == currentUserId && toUserId == conversation.id)
+        ConversationType.Broadcast -> groupId == null && toUserId == null
+    }
 
 private fun RealtimeChatMessage.toChatMessage(currentUserId: Long?): ChatMessageUi =
     ChatMessageUi(
