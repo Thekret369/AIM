@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Card
@@ -52,8 +52,7 @@ fun ProfileScreen(
     realtimeState: RealtimeConnectionState,
     updateInfo: AppUpdateInfo?,
 ) {
-    var pushEnabled by rememberSaveable { mutableStateOf(true) }
-    var betaUpdates by rememberSaveable { mutableStateOf(true) }
+    var notificationEnabled by rememberSaveable { mutableStateOf(true) }
 
     LanLineMainScaffold(currentRoute = currentRoute, onNavigate = onNavigate) { padding ->
         LazyColumn(
@@ -62,32 +61,35 @@ fun ProfileScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                LanLineTopBar(title = "我的", subtitle = "测试包 · 内部渠道")
+                LanLineTopBar(title = "设置", subtitle = "账号、通知与版本")
                 ProfileHeader(session = session)
             }
             item {
-                ToggleRow(
+                SettingRow(
                     icon = Icons.Default.Notifications,
-                    title = "消息推送",
-                    subtitle = "本地通知已接入，WebSocket 收到新消息会提醒",
-                    checked = pushEnabled,
-                    onCheckedChange = { pushEnabled = it },
+                    title = "消息提醒",
+                    subtitle = "收到实时消息时显示本地通知",
+                    trailing = {
+                        Switch(
+                            checked = notificationEnabled,
+                            onCheckedChange = { notificationEnabled = it },
+                            colors = SwitchDefaults.colors(checkedThumbColor = LanLineColors.Primary),
+                        )
+                    },
                 )
             }
             item {
-                ToggleRow(
+                SettingRow(
                     icon = Icons.Default.SystemUpdate,
-                    title = "测试包更新",
+                    title = "版本更新",
                     subtitle = updateInfo.describeUpdate(),
-                    checked = betaUpdates,
-                    onCheckedChange = { betaUpdates = it },
                 )
             }
             item {
-                LinkRow(
+                SettingRow(
                     icon = Icons.Default.Sync,
-                    title = "同步状态",
-                    subtitle = "WebSocket ${realtimeState.label} · 版本接口已接入后端",
+                    title = "连接状态",
+                    subtitle = "WebSocket ${realtimeState.label} · 当前 ${LanLineBuildInfo.VersionName}",
                 )
             }
             item { Spacer(Modifier.height(88.dp)) }
@@ -109,31 +111,36 @@ private fun ProfileHeader(session: AuthSession?) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            LanLineAvatar(text = "测", color = LanLineColors.Primary, background = LanLineColors.PrimarySoft, online = true)
+            LanLineAvatar(
+                text = session?.user?.displayName?.take(1).orEmpty().ifBlank { "我" },
+                color = LanLineColors.Primary,
+                background = LanLineColors.PrimarySoft,
+                online = true,
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = session?.user?.displayName ?: "测试账号",
+                    text = session?.user?.displayName ?: "未登录",
                     color = LanLineColors.Text,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = session?.user?.username ?: "com.lanline.app.debug · ${LanLineBuildInfo.VersionName}",
+                    text = session?.user?.username ?: "LanLine",
                     color = LanLineColors.Muted,
                     fontSize = 12.sp,
                 )
             }
+            Icon(Icons.Default.Person, contentDescription = null, tint = LanLineColors.Subtle)
         }
     }
 }
 
 @Composable
-private fun ToggleRow(
+private fun SettingRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+    trailing: @Composable (() -> Unit)? = null,
 ) {
     Card(
         shape = RoundedCornerShape(8.dp),
@@ -152,40 +159,7 @@ private fun ToggleRow(
                 Text(title, color = LanLineColors.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Text(subtitle, color = LanLineColors.Muted, fontSize = 11.sp, lineHeight = 16.sp)
             }
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                colors = SwitchDefaults.colors(checkedThumbColor = LanLineColors.Primary),
-            )
-        }
-    }
-}
-
-@Composable
-private fun LinkRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-) {
-    Card(
-        onClick = {},
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = LanLineColors.Surface),
-        border = BorderStroke(1.dp, LanLineColors.Line),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 15.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(icon, contentDescription = null, tint = LanLineColors.Primary)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = LanLineColors.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(subtitle, color = LanLineColors.Muted, fontSize = 11.sp)
-            }
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = LanLineColors.Subtle)
+            trailing?.invoke()
         }
     }
 }

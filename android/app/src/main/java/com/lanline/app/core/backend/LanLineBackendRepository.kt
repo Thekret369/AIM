@@ -10,6 +10,8 @@ import com.lanline.app.model.ChatMessageUi
 import com.lanline.app.model.ContactUi
 import com.lanline.app.model.ConversationType
 import com.lanline.app.model.ConversationUi
+import com.lanline.app.model.FriendRequestUi
+import com.lanline.app.model.GroupUi
 import com.lanline.app.model.MessageStatus
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,6 +31,7 @@ class LanLineBackendRepository(
             val friends = runApi("好友", failures) { api.friends() }?.firstArray("friends", "data", "items") ?: JSONArray()
             val groups = runApi("群组", failures) { api.groups() }?.firstArray("groups", "data", "items") ?: JSONArray()
             val bots = runApi("AI助手", failures) { api.aiBots() }?.firstArray("bots", "data", "items") ?: JSONArray()
+            val pending = runApi("好友申请", failures) { api.pendingFriends() }?.firstArray("requests", "friends", "data", "items") ?: JSONArray()
 
             val friendContacts = friends.mapObjects { friend ->
                 val id = friend.firstLong("friend_id", "user_id", "id")
@@ -37,23 +40,25 @@ class LanLineBackendRepository(
                     id = id,
                     name = name,
                     avatar = name.initial("友"),
-                    subtitle = friend.optString("note").ifBlank { "好友 · ${friend.optString("username")}" },
+                    subtitle = friend.optString("note").ifBlank { friend.optString("username").ifBlank { "好友" } },
                     group = "好友",
                     online = onlineIds.contains(id),
                 )
             }.filter { it.id > 0 }
-            val groupContacts = groups.mapObjects { group ->
+
+            val groupItems = groups.mapObjects { group ->
                 val id = group.firstLong("id", "group_id")
                 val name = group.optString("name").ifBlank { "群组 $id" }
-                ContactUi(
+                GroupUi(
                     id = id,
                     name = name,
                     avatar = name.initial("群"),
-                    subtitle = group.optString("description").ifBlank { "群聊" },
-                    group = "群聊",
-                    online = false,
+                    description = group.optString("description").ifBlank { "暂无简介" },
+                    memberCount = group.optInt("member_count", group.optInt("members_count", 0)),
+                    doNotDisturb = group.optBoolean("dnd", false),
                 )
             }.filter { it.id > 0 }
+
             val aiContacts = bots.mapObjects { bot ->
                 val userId = bot.firstLong("user_id", "id")
                 val name = bot.displayName()
@@ -69,28 +74,41 @@ class LanLineBackendRepository(
                 )
             }.filter { it.id > 0 }
 
+            val pendingRequests = pending.mapObjects { request ->
+                val userId = request.firstLong("user_id", "from_user_id", "friend_id")
+                val name = request.displayName()
+                FriendRequestUi(
+                    id = request.firstLong("id"),
+                    userId = userId,
+                    name = name,
+                    message = request.optString("message"),
+                )
+            }.filter { it.id > 0 }
+
             val conversations = buildList {
+                add(
+                    ConversationUi(
+                        id = 0,
+                        type = ConversationType.Broadcast,
+                        title = "广播消息",
+                        avatarText = "广",
+                        lastMessage = "系统广播与通知",
+                        timeText = "",
+                        accent = LanLineColors.Muted,
+                        accentSoft = LanLineColors.SurfaceAlt,
+                    ),
+                )
                 addAll(friendContacts.map { contact ->
                     ConversationUi(
                         id = contact.id,
                         type = ConversationType.User,
                         title = contact.name,
                         avatarText = contact.avatar,
-                        lastMessage = "点击查看单聊历史",
+                        lastMessage = contact.subtitle.ifBlank { "点击查看单聊历史" },
                         timeText = "",
                         online = contact.online,
                         accent = LanLineColors.Accent,
                         accentSoft = LanLineColors.AccentSoft,
-                    )
-                })
-                addAll(groupContacts.map { contact ->
-                    ConversationUi(
-                        id = contact.id,
-                        type = ConversationType.Group,
-                        title = contact.name,
-                        avatarText = contact.avatar,
-                        lastMessage = contact.subtitle,
-                        timeText = "",
                     )
                 })
                 addAll(aiContacts.map { contact ->
@@ -106,16 +124,28 @@ class LanLineBackendRepository(
                         accentSoft = LanLineColors.AiSoft,
                     )
                 })
+                addAll(groupItems.map { group ->
+                    ConversationUi(
+                        id = group.id,
+                        type = ConversationType.Group,
+                        title = group.name,
+                        avatarText = group.avatar,
+                        lastMessage = group.description,
+                        timeText = "",
+                    )
+                })
             }
 
             val status = if (failures.isEmpty()) {
-                "后端已连接 · ${friendContacts.size} 好友 · ${groupContacts.size} 群组 · ${aiContacts.size} AI"
+                "已同步 · ${friendContacts.size} 好友 · ${groupItems.size} 群组 · ${aiContacts.size} AI"
             } else {
-                "部分接口失败：${failures.joinToString("、")}"
+                "部分接口失败：${failures.distinct().joinToString("、")}"
             }
             BackendSnapshot(
                 conversations = conversations,
-                contacts = friendContacts + groupContacts + aiContacts,
+                contacts = friendContacts + aiContacts,
+                groups = groupItems,
+                pendingFriends = pendingRequests,
                 statusText = status,
             )
         }
@@ -127,11 +157,16 @@ class LanLineBackendRepository(
                 ConversationType.Group -> api.groupHistory(conversation.id)
                 ConversationType.Broadcast -> api.broadcastHistory()
             }
-            // The backend returns the first page in descending time order; the chat list renders oldest to newest.
             response.firstArray("messages", "data", "items")
                 .mapObjects { message -> message.toChatMessage(currentUserId) }
                 .asReversed()
         }
+
+    suspend fun handleFriendRequest(requestId: Long, accept: Boolean): Result<Unit> =
+        runCatching { api.handleFriendRequest(requestId, accept) }.map { }
+
+    suspend fun deleteFriend(friendId: Long): Result<Unit> =
+        runCatching { api.deleteFriend(friendId) }.map { }
 
     private suspend fun runApi(
         name: String,
@@ -196,7 +231,8 @@ class LanLineBackendRepository(
             fromMe = firstLong("from_user_id") == currentUserId,
             timeText = optString("created_at").toShortTime(),
             status = MessageStatus.Read,
-            isAi = optJSONObject("from_user")?.optString("username").orEmpty().contains("ai", ignoreCase = true),
+            isAi = optJSONObject("from_user")?.optBoolean("is_ai", false) == true ||
+                optJSONObject("from_user")?.optString("username").orEmpty().contains("ai", ignoreCase = true),
             isImage = type == "image",
         )
     }

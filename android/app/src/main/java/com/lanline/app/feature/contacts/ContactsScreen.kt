@@ -14,18 +14,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -36,9 +32,8 @@ import com.lanline.app.core.ui.LanLineAvatar
 import com.lanline.app.core.ui.LanLineColors
 import com.lanline.app.core.ui.LanLineMainScaffold
 import com.lanline.app.core.ui.LanLineTopBar
-import com.lanline.app.core.ui.FilterChipRow
-import com.lanline.app.core.ui.SearchBox
 import com.lanline.app.model.ContactUi
+import com.lanline.app.model.FriendRequestUi
 import com.lanline.app.model.LanLineRoute
 
 @Composable
@@ -46,11 +41,12 @@ fun ContactsScreen(
     currentRoute: LanLineRoute,
     onNavigate: (LanLineRoute) -> Unit,
     contacts: List<ContactUi>,
+    pendingFriends: List<FriendRequestUi>,
     backendStatus: String,
     onOpenChat: (ContactUi) -> Unit,
+    onHandleRequest: (FriendRequestUi, Boolean) -> Unit,
 ) {
-    var selected by rememberSaveable { mutableStateOf("全部") }
-    val filteredContacts = contacts.filter { selected == "全部" || it.group == selected }
+    val friendContacts = contacts.filter { it.group == "好友" }
 
     LanLineMainScaffold(currentRoute = currentRoute, onNavigate = onNavigate) { padding ->
         LazyColumn(
@@ -62,31 +58,33 @@ fun ContactsScreen(
                 LanLineTopBar(
                     title = "联系人",
                     subtitle = backendStatus,
-                    trailing = {
-                        IconButton(onClick = {}) {
-                            Icon(Icons.Default.PersonAdd, contentDescription = "添加联系人")
-                        }
-                    },
-                )
-                SearchBox("搜索好友、群聊或 LanLine 助手")
-                Spacer(Modifier.height(14.dp))
-                FilterChipRow(
-                    items = listOf("全部", "好友", "群聊", "AI"),
-                    selected = selected,
-                    aiChip = "AI",
-                    onSelected = { selected = it },
                 )
             }
-            if (filteredContacts.isEmpty()) {
+            if (pendingFriends.isNotEmpty()) {
                 item {
-                    Text(
-                        text = "暂无后端联系人数据，请先在网页端或服务端创建好友、群组或 AI 助手。",
-                        color = LanLineColors.Muted,
-                        modifier = Modifier.padding(top = 18.dp),
+                    Text("待处理申请", color = LanLineColors.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+                items(pendingFriends, key = { it.id }) { request ->
+                    PendingRequestRow(
+                        request = request,
+                        onAccept = { onHandleRequest(request, true) },
+                        onReject = { onHandleRequest(request, false) },
                     )
                 }
             }
-            items(filteredContacts, key = { "${it.group}:${it.id}" }) { contact ->
+            item {
+                Text("好友列表", color = LanLineColors.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
+            if (friendContacts.isEmpty()) {
+                item {
+                    Text(
+                        text = "暂无好友",
+                        color = LanLineColors.Muted,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+            items(friendContacts, key = { it.id }) { contact ->
                 ContactRow(contact = contact, onClick = { onOpenChat(contact) })
             }
             item { Spacer(Modifier.height(88.dp)) }
@@ -114,8 +112,8 @@ private fun ContactRow(contact: ContactUi, onClick: () -> Unit) {
             LanLineAvatar(
                 text = contact.avatar,
                 online = contact.online,
-                color = if (contact.group == "AI") LanLineColors.Ai else LanLineColors.Primary,
-                background = if (contact.group == "AI") LanLineColors.AiSoft else LanLineColors.PrimarySoft,
+                color = LanLineColors.Primary,
+                background = LanLineColors.PrimarySoft,
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -134,11 +132,42 @@ private fun ContactRow(contact: ContactUi, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Icon(
-                imageVector = if (contact.group == "好友") Icons.Default.Chat else Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = LanLineColors.Subtle,
-            )
+            Icon(Icons.Default.Chat, contentDescription = null, tint = LanLineColors.Subtle)
+        }
+    }
+}
+
+@Composable
+private fun PendingRequestRow(
+    request: FriendRequestUi,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, LanLineColors.Line),
+        colors = CardDefaults.cardColors(containerColor = LanLineColors.Surface),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(72.dp)
+                .padding(horizontal = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            LanLineAvatar(text = request.name.take(1).ifBlank { "友" })
+            Column(modifier = Modifier.weight(1f)) {
+                Text(request.name, color = LanLineColors.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(request.message.ifBlank { "请求添加好友" }, color = LanLineColors.Muted, fontSize = 12.sp)
+            }
+            IconButton(onClick = onAccept) {
+                Icon(Icons.Default.Done, contentDescription = "同意", tint = LanLineColors.Primary)
+            }
+            IconButton(onClick = onReject) {
+                Icon(Icons.Default.Close, contentDescription = "拒绝", tint = LanLineColors.Danger)
+            }
         }
     }
 }

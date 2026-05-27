@@ -4,12 +4,12 @@ import androidx.compose.ui.graphics.Color
 import com.lanline.app.core.ui.LanLineColors
 
 enum class LanLineRoute {
-    Setup,
     Login,
     Chats,
     Chat,
-    Ai,
     Contacts,
+    Groups,
+    Ai,
     Profile,
 }
 
@@ -59,8 +59,26 @@ data class ContactUi(
     val online: Boolean,
 )
 
+data class GroupUi(
+    val id: Long,
+    val name: String,
+    val avatar: String,
+    val description: String,
+    val memberCount: Int,
+    val doNotDisturb: Boolean,
+)
+
+data class FriendRequestUi(
+    val id: Long,
+    val userId: Long,
+    val name: String,
+    val message: String,
+)
+
 data class BackendSnapshot(
     val conversations: List<ConversationUi> = emptyList(),
     val contacts: List<ContactUi> = emptyList(),
+    val groups: List<GroupUi> = emptyList(),
+    val pendingFriends: List<FriendRequestUi> = emptyList(),
     val statusText: String = "未连接后端",
 )

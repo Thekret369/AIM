@@ -1,7 +1,6 @@
 package com.lanline.app.feature.auth
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,7 +39,6 @@ import kotlinx.coroutines.launch
 fun LoginScreen(
     config: ServerConfig,
     onLogin: (AuthSession) -> Unit,
-    onChangeServer: () -> Unit,
 ) {
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
@@ -68,7 +65,7 @@ fun LoginScreen(
                 }
                 .onFailure { error ->
                     isLoggingIn = false
-                    errorMessage = error.message ?: "登录失败，请检查账号或服务器"
+                    errorMessage = error.message ?: "登录失败，请检查账号或服务"
                 }
         }
     }
@@ -93,14 +90,14 @@ fun LoginScreen(
             Spacer(Modifier.width(14.dp))
             Column {
                 Text("LanLine", color = LanLineColors.Text, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                Text("通讯 + AI 的移动测试入口", color = LanLineColors.Muted, fontSize = 13.sp)
+                Text("通讯 + AI", color = LanLineColors.Muted, fontSize = 13.sp)
             }
         }
 
         Spacer(Modifier.height(76.dp))
         LanLineTextField(label = "账号", value = username, onValueChange = { username = it })
         Spacer(Modifier.height(14.dp))
-        // 连调包只在内存中保存输入内容，不做密码持久化。
+        // 登录页只保留网页端同等输入，不预填账号，也不持久化密码。
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
@@ -122,41 +119,6 @@ fun LoginScreen(
                 color = LanLineColors.Danger,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 10.dp),
-            )
-        }
-        Spacer(Modifier.height(12.dp))
-        OutlinedButton(
-            onClick = {},
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(8.dp),
-        ) {
-            Text("注册新账号", color = LanLineColors.Primary, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(112.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(LanLineColors.SurfaceAlt, RoundedCornerShape(8.dp))
-                .padding(horizontal = 14.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "当前服务器 ${config.apiBaseUrl}",
-                modifier = Modifier.weight(1f),
-                color = LanLineColors.Muted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "修改",
-                color = LanLineColors.Primary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .clickable(onClick = onChangeServer)
-                    .padding(start = 12.dp),
             )
         }
     }

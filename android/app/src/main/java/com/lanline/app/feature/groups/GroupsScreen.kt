@@ -1,4 +1,4 @@
-package com.lanline.app.feature.ai
+package com.lanline.app.feature.groups
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -29,18 +29,18 @@ import com.lanline.app.core.ui.LanLineAvatar
 import com.lanline.app.core.ui.LanLineColors
 import com.lanline.app.core.ui.LanLineMainScaffold
 import com.lanline.app.core.ui.LanLineTopBar
-import com.lanline.app.model.ContactUi
 import com.lanline.app.model.ConversationType
 import com.lanline.app.model.ConversationUi
+import com.lanline.app.model.GroupUi
 import com.lanline.app.model.LanLineRoute
 
 @Composable
-fun AiScreen(
+fun GroupsScreen(
     currentRoute: LanLineRoute,
     onNavigate: (LanLineRoute) -> Unit,
-    aiContacts: List<ContactUi>,
+    groups: List<GroupUi>,
     backendStatus: String,
-    onOpenChat: (ConversationUi) -> Unit,
+    onOpenGroup: (ConversationUi) -> Unit,
 ) {
     LanLineMainScaffold(currentRoute = currentRoute, onNavigate = onNavigate) { padding ->
         LazyColumn(
@@ -49,19 +49,19 @@ fun AiScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
-                LanLineTopBar(title = "AI助手", subtitle = backendStatus)
+                LanLineTopBar(title = "群组", subtitle = backendStatus)
             }
-            if (aiContacts.isEmpty()) {
+            if (groups.isEmpty()) {
                 item {
                     Text(
-                        text = "暂无AI助手",
+                        text = "暂无群组",
                         color = LanLineColors.Muted,
                         modifier = Modifier.padding(top = 18.dp),
                     )
                 }
             }
-            items(aiContacts, key = { it.id }) { contact ->
-                AiRow(contact = contact, onClick = { onOpenChat(contact.toConversation()) })
+            items(groups, key = { it.id }) { group ->
+                GroupRow(group = group, onClick = { onOpenGroup(group.toConversation()) })
             }
             item { Spacer(Modifier.height(88.dp)) }
         }
@@ -69,7 +69,7 @@ fun AiScreen(
 }
 
 @Composable
-private fun AiRow(contact: ContactUi, onClick: () -> Unit) {
+private fun GroupRow(group: GroupUi, onClick: () -> Unit) {
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -85,10 +85,10 @@ private fun AiRow(contact: ContactUi, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            LanLineAvatar(text = "AI", color = LanLineColors.Ai, background = LanLineColors.AiSoft, online = contact.online)
+            LanLineAvatar(text = group.avatar)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = contact.name,
+                    text = group.name,
                     color = LanLineColors.Text,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
@@ -96,7 +96,11 @@ private fun AiRow(contact: ContactUi, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = contact.subtitle,
+                    text = buildString {
+                        if (group.memberCount > 0) append("${group.memberCount} 人 · ")
+                        append(group.description)
+                        if (group.doNotDisturb) append(" · 免打扰")
+                    },
                     color = LanLineColors.Muted,
                     fontSize = 12.sp,
                     maxLines = 1,
@@ -108,15 +112,12 @@ private fun AiRow(contact: ContactUi, onClick: () -> Unit) {
     }
 }
 
-private fun ContactUi.toConversation(): ConversationUi =
+private fun GroupUi.toConversation(): ConversationUi =
     ConversationUi(
         id = id,
-        type = ConversationType.Ai,
+        type = ConversationType.Group,
         title = name,
-        avatarText = "AI",
-        lastMessage = subtitle,
+        avatarText = avatar,
+        lastMessage = description,
         timeText = "",
-        online = online,
-        accent = LanLineColors.Ai,
-        accentSoft = LanLineColors.AiSoft,
     )

@@ -1,8 +1,8 @@
 package com.lanline.app.core.push
 
 /**
- * 推送网关预留给后续厂商通道接入。
- * 当前测试包只保留契约，不直接依赖 FCM、华为、小米等具体 SDK。
+ * 推送网关用于厂商通道接入。
+ * 当前仅保留平台无关契约，不直接依赖 FCM、华为、小米等具体 SDK。
  */
 interface PushGateway {
     suspend fun registerDevice(request: PushRegisterRequest): Result<PushRegisterResult>

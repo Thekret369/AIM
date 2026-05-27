@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -22,8 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -49,8 +50,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lanline.app.model.LanLineRoute
 import com.lanline.app.model.ConversationUi
+import com.lanline.app.model.LanLineRoute
 
 private data class NavSpec(
     val route: LanLineRoute,
@@ -59,22 +60,21 @@ private data class NavSpec(
 )
 
 private val mainNav = listOf(
-    NavSpec(LanLineRoute.Chats, "聊天", Icons.Default.Chat),
+    NavSpec(LanLineRoute.Chats, "消息", Icons.Default.Chat),
     NavSpec(LanLineRoute.Contacts, "联系人", Icons.Default.People),
+    NavSpec(LanLineRoute.Groups, "群组", Icons.Default.Groups),
     NavSpec(LanLineRoute.Ai, "AI", Icons.Default.AutoAwesome),
-    NavSpec(LanLineRoute.Profile, "我的", Icons.Default.Person),
+    NavSpec(LanLineRoute.Profile, "设置", Icons.Default.Settings),
 )
 
 @Composable
 fun LanLineMainScaffold(
     currentRoute: LanLineRoute,
     onNavigate: (LanLineRoute) -> Unit,
-    floatingActionButton: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
         containerColor = LanLineColors.Background,
-        floatingActionButton = floatingActionButton,
         bottomBar = {
             NavigationBar(
                 containerColor = LanLineColors.Surface,
@@ -91,7 +91,7 @@ fun LanLineMainScaffold(
                                 contentDescription = item.label,
                             )
                         },
-                        label = { Text(item.label) },
+                        label = { Text(item.label, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = if (item.route == LanLineRoute.Ai) LanLineColors.Ai else LanLineColors.Primary,
                             selectedTextColor = LanLineColors.Text,
@@ -123,9 +123,7 @@ fun LanLineTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (leading != null) {
-            leading()
-        }
+        leading?.invoke()
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.Center,
@@ -150,9 +148,7 @@ fun LanLineTopBar(
                 )
             }
         }
-        if (trailing != null) {
-            trailing()
-        }
+        trailing?.invoke()
     }
 }
 
@@ -221,7 +217,7 @@ fun LanLineAvatar(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = text,
+                text = text.take(2),
                 color = color,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
@@ -253,7 +249,7 @@ fun SearchBox(text: String, modifier: Modifier = Modifier) {
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("⌕", color = LanLineColors.Subtle, fontWeight = FontWeight.Bold)
+        Icon(Icons.Default.Search, contentDescription = null, tint = LanLineColors.Subtle, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
         Text(text = text, color = LanLineColors.Subtle, fontSize = 13.sp)
     }

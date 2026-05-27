@@ -15,6 +15,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -36,24 +37,25 @@ import com.lanline.app.feature.auth.LoginScreen
 import com.lanline.app.feature.chat.ChatScreen
 import com.lanline.app.feature.chats.ChatsScreen
 import com.lanline.app.feature.contacts.ContactsScreen
+import com.lanline.app.feature.groups.GroupsScreen
 import com.lanline.app.feature.profile.ProfileScreen
-import com.lanline.app.feature.setup.SetupScreen
 import com.lanline.app.model.BackendSnapshot
 import com.lanline.app.model.ChatMessageUi
 import com.lanline.app.model.ContactUi
 import com.lanline.app.model.ConversationType
 import com.lanline.app.model.ConversationUi
 import com.lanline.app.model.LanLineRoute
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 @Composable
 fun LanLineApp() {
     val context = LocalContext.current
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val scope = rememberCoroutineScope()
     val notifier = remember(context) { LocalMessageNotifier(context.applicationContext) }
+    val serverConfig = remember { ServerConfig() }
     var routeName by rememberSaveable { mutableStateOf(LanLineRoute.Login.name) }
-    var apiBaseUrl by rememberSaveable { mutableStateOf(ServerConfig.DefaultApiBaseUrl) }
-    var websocketUrl by rememberSaveable { mutableStateOf(ServerConfig.DefaultWebSocketUrl) }
     var session by remember { mutableStateOf<AuthSession?>(null) }
     var realtimeClient by remember { mutableStateOf<LanLineRealtimeClient?>(null) }
     var realtimeState by remember { mutableStateOf(RealtimeConnectionState.Idle) }
@@ -64,8 +66,16 @@ fun LanLineApp() {
     var historyMessages by remember { mutableStateOf<List<ChatMessageUi>>(emptyList()) }
     var historyStatus by remember { mutableStateOf("请选择会话") }
     val route = LanLineRoute.valueOf(routeName)
-    val serverConfig = ServerConfig(apiBaseUrl = apiBaseUrl, websocketUrl = websocketUrl)
     val navigate: (LanLineRoute) -> Unit = { next -> routeName = next.name }
+
+    suspend fun reloadSnapshot(activeSession: AuthSession) {
+        backendSnapshot = BackendSnapshot(statusText = "正在同步")
+        LanLineBackendRepository(activeSession).loadSnapshot()
+            .onSuccess { snapshot -> backendSnapshot = snapshot }
+            .onFailure { error ->
+                backendSnapshot = BackendSnapshot(statusText = error.message ?: "接口连接失败")
+            }
+    }
 
     DisposableEffect(session?.token, session?.websocketUrl) {
         val activeSession = session
@@ -81,9 +91,13 @@ fun LanLineApp() {
                     mainHandler.post { realtimeState = state }
                 },
                 onChatMessage = { message ->
-                    notifier.notifyMessage(message, activeSession.user.id)
+                    if (message.fromUserId != activeSession.user.id) {
+                        notifier.notifyMessage(message, activeSession.user.id)
+                    }
                     mainHandler.post {
-                        realtimeMessages = (realtimeMessages + message).takeLast(MaxRealtimeMessages)
+                        realtimeMessages = (realtimeMessages + message)
+                            .distinctBy { it.id.takeIf { id -> id > 0 } ?: it.receivedAtEpochMillis }
+                            .takeLast(MaxRealtimeMessages)
                     }
                 },
             )
@@ -121,12 +135,7 @@ fun LanLineApp() {
             selectedConversation = null
             return@LaunchedEffect
         }
-        backendSnapshot = BackendSnapshot(statusText = "正在连接后端接口")
-        LanLineBackendRepository(activeSession).loadSnapshot()
-            .onSuccess { snapshot -> backendSnapshot = snapshot }
-            .onFailure { error ->
-                backendSnapshot = BackendSnapshot(statusText = error.message ?: "后端接口连接失败")
-            }
+        reloadSnapshot(activeSession)
     }
 
     LaunchedEffect(session?.token, selectedConversation?.type, selectedConversation?.id) {
@@ -159,21 +168,12 @@ fun LanLineApp() {
             label = "lanline-route-transition",
         ) { current ->
             when (current) {
-                LanLineRoute.Setup -> SetupScreen(
-                    config = serverConfig,
-                    onSaved = { nextConfig ->
-                        apiBaseUrl = nextConfig.apiBaseUrl
-                        websocketUrl = nextConfig.websocketUrl
-                        navigate(LanLineRoute.Login)
-                    },
-                )
                 LanLineRoute.Login -> LoginScreen(
                     config = serverConfig,
                     onLogin = { nextSession ->
                         session = nextSession
                         navigate(LanLineRoute.Chats)
                     },
-                    onChangeServer = { navigate(LanLineRoute.Setup) },
                 )
                 LanLineRoute.Chats -> ChatsScreen(
                     currentRoute = current,
@@ -186,7 +186,6 @@ fun LanLineApp() {
                         selectedConversation = conversation
                         navigate(LanLineRoute.Chat)
                     },
-                    onOpenAi = { navigate(LanLineRoute.Ai) },
                 )
                 LanLineRoute.Chat -> ChatScreen(
                     onBack = { navigate(LanLineRoute.Chats) },
@@ -200,23 +199,44 @@ fun LanLineApp() {
                             realtimeClient?.sendChat(conversation.toMessagePayload(text)) == true
                     },
                 )
-                LanLineRoute.Ai -> AiScreen(
-                    currentRoute = current,
-                    onNavigate = navigate,
-                    onBack = { navigate(LanLineRoute.Chats) },
-                )
                 LanLineRoute.Contacts -> ContactsScreen(
                     currentRoute = current,
                     onNavigate = navigate,
                     contacts = backendSnapshot.contacts,
+                    pendingFriends = backendSnapshot.pendingFriends,
                     backendStatus = backendSnapshot.statusText,
                     onOpenChat = { contact ->
-                        if (contact.group == "AI") {
-                            navigate(LanLineRoute.Ai)
-                        } else {
-                            selectedConversation = contact.toConversation()
-                            navigate(LanLineRoute.Chat)
+                        selectedConversation = contact.toConversation()
+                        navigate(LanLineRoute.Chat)
+                    },
+                    onHandleRequest = { request, accept ->
+                        val activeSession = session
+                        if (activeSession != null) {
+                            scope.launch {
+                                LanLineBackendRepository(activeSession).handleFriendRequest(request.id, accept)
+                                reloadSnapshot(activeSession)
+                            }
                         }
+                    },
+                )
+                LanLineRoute.Groups -> GroupsScreen(
+                    currentRoute = current,
+                    onNavigate = navigate,
+                    groups = backendSnapshot.groups,
+                    backendStatus = backendSnapshot.statusText,
+                    onOpenGroup = { conversation ->
+                        selectedConversation = conversation
+                        navigate(LanLineRoute.Chat)
+                    },
+                )
+                LanLineRoute.Ai -> AiScreen(
+                    currentRoute = current,
+                    onNavigate = navigate,
+                    aiContacts = backendSnapshot.contacts.filter { it.group == "AI" },
+                    backendStatus = backendSnapshot.statusText,
+                    onOpenChat = { conversation ->
+                        selectedConversation = conversation
+                        navigate(LanLineRoute.Chat)
                     },
                 )
                 LanLineRoute.Profile -> ProfileScreen(
@@ -248,10 +268,12 @@ private fun ConversationUi.toMessagePayload(text: String): JSONObject =
 private fun ContactUi.toConversation(): ConversationUi =
     ConversationUi(
         id = id,
-        type = if (group == "群聊") ConversationType.Group else ConversationType.User,
+        type = if (group == "AI") ConversationType.Ai else ConversationType.User,
         title = name,
         avatarText = avatar,
         lastMessage = subtitle,
         timeText = "",
         online = online,
+        accent = if (group == "AI") com.lanline.app.core.ui.LanLineColors.Ai else com.lanline.app.core.ui.LanLineColors.Accent,
+        accentSoft = if (group == "AI") com.lanline.app.core.ui.LanLineColors.AiSoft else com.lanline.app.core.ui.LanLineColors.AccentSoft,
     )

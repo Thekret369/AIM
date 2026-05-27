@@ -10,8 +10,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * 测试包更新检查接口。
- * 后续可以接自部署更新服务，返回 APK 下载地址、强更策略和更新说明。
+ * Android 版本更新检查接口。
+ * 部署服务可返回 APK 下载地址、强更策略和更新说明。
  */
 interface AppUpdateGateway {
     suspend fun checkLatest(request: AppUpdateCheckRequest): Result<AppUpdateInfo>

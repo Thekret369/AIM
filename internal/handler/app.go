@@ -21,12 +21,12 @@ type androidUpdateResponse struct {
 	ReleaseNotes      []string `json:"release_notes"`
 }
 
-// GetAndroidLatest returns the current Android test package metadata.
+// GetAndroidLatest returns the current Android package metadata.
 // Values can be injected during deployment without changing code.
 func (h *AppHandler) GetAndroidLatest(c *gin.Context) {
 	currentCode, _ := strconv.Atoi(c.Query("version_code"))
-	latestCode := envInt("LANLINE_ANDROID_VERSION_CODE", 5)
-	latestName := envString("LANLINE_ANDROID_VERSION_NAME", "0.5.0-debug")
+	latestCode := envInt("LANLINE_ANDROID_VERSION_CODE", 6)
+	latestName := envString("LANLINE_ANDROID_VERSION_NAME", "0.6.0-debug")
 	requirement := envString("LANLINE_ANDROID_UPDATE_REQUIREMENT", "Optional")
 
 	c.JSON(http.StatusOK, androidUpdateResponse{
