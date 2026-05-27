@@ -118,8 +118,9 @@ class LanLineRealtimeClient(
     private fun parseChatMessage(text: String): RealtimeChatMessage? =
         runCatching {
             val root = JSONObject(text)
+            val hasWrapper = root.has("payload")
             val messageType = root.optString("type", "chat")
-            if (messageType != "chat") return@runCatching null
+            if (hasWrapper && messageType != "chat") return@runCatching null
             val payload = root.optJSONObject("payload") ?: root
             val fromUser = payload.optJSONObject("from_user")
             RealtimeChatMessage(

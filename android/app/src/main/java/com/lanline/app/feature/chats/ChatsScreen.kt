@@ -32,14 +32,21 @@ fun ChatsScreen(
     onNavigate: (LanLineRoute) -> Unit,
     realtimeState: RealtimeConnectionState,
     realtimeMessages: List<RealtimeChatMessage>,
+    currentUserId: Long?,
     conversations: List<ConversationUi>,
     backendStatus: String,
     onOpenChat: (ConversationUi) -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf("全部") }
-    val liveConversation = realtimeMessages.lastOrNull()?.toConversation(realtimeMessages.size)
-    val sourceConversations = (listOfNotNull(liveConversation) + conversations)
-        .distinctBy { "${it.type}:${it.id}" }
+    val liveConversations = realtimeMessages
+        .groupBy { it.conversationKey(currentUserId) }
+        .values
+        .mapNotNull { messages ->
+            val latest = messages.maxByOrNull { it.sortValue }
+            latest?.toConversation(currentUserId, messages.count { it.fromUserId != currentUserId })
+        }
+    val sourceConversations = mergeConversations(conversations, liveConversations)
+        .sortedWith(compareByDescending<ConversationUi> { it.type == ConversationType.Broadcast }.thenByDescending { it.sortEpochMillis })
     val filteredConversations = sourceConversations.filter {
         when (selected) {
             "未读" -> it.unreadCount > 0
@@ -90,23 +97,77 @@ fun ChatsScreen(
     }
 }
 
-private fun RealtimeChatMessage.toConversation(unreadCount: Int): ConversationUi =
+private fun mergeConversations(
+    baseConversations: List<ConversationUi>,
+    liveConversations: List<ConversationUi>,
+): List<ConversationUi> {
+    val merged = linkedMapOf<String, ConversationUi>()
+    baseConversations.forEach { conversation ->
+        merged[conversation.conversationKey()] = conversation
+    }
+    liveConversations.forEach { live ->
+        val key = live.conversationKey()
+        val base = merged[key]
+        merged[key] = if (base == null) {
+            live
+        } else {
+            base.copy(
+                lastMessage = live.lastMessage,
+                timeText = live.timeText,
+                sortEpochMillis = live.sortEpochMillis,
+                unreadCount = live.unreadCount,
+                online = base.online || live.online,
+            )
+        }
+    }
+    return merged.values.toList()
+}
+
+private fun RealtimeChatMessage.toConversation(currentUserId: Long?, unreadCount: Int): ConversationUi =
     ConversationUi(
-        id = when {
-            groupId != null && groupId > 0 -> groupId
-            toUserId != null && toUserId > 0 -> toUserId
-            else -> fromUserId
-        },
+        id = conversationTargetId(currentUserId),
         type = if (groupId != null && groupId > 0) ConversationType.Group else ConversationType.User,
-        title = conversationTitle,
-        avatarText = conversationTitle.take(1).ifBlank { "L" },
+        title = displayTitle(currentUserId),
+        avatarText = displayTitle(currentUserId).take(1).ifBlank { "L" },
         lastMessage = preview,
         timeText = createdAt.toShortTime().ifBlank { "刚刚" },
+        sortEpochMillis = sortValue,
         unreadCount = unreadCount,
         online = true,
         accent = LanLineColors.Accent,
         accentSoft = LanLineColors.AccentSoft,
     )
+
+private val RealtimeChatMessage.sortValue: Long
+    get() = id.takeIf { it > 0 } ?: receivedAtEpochMillis
+
+private fun RealtimeChatMessage.conversationTargetId(currentUserId: Long?): Long =
+    when {
+        groupId != null && groupId > 0 -> groupId
+        currentUserId != null && fromUserId == currentUserId -> toUserId ?: 0L
+        else -> fromUserId
+    }
+
+private fun RealtimeChatMessage.conversationKey(currentUserId: Long?): String =
+    when {
+        groupId != null && groupId > 0 -> "group:$groupId"
+        toUserId == null -> "broadcast"
+        else -> "user:${conversationTargetId(currentUserId)}"
+    }
+
+private fun RealtimeChatMessage.displayTitle(currentUserId: Long?): String =
+    when {
+        groupId != null && groupId > 0 -> conversationTitle
+        currentUserId != null && fromUserId == currentUserId -> "用户 #${conversationTargetId(currentUserId)}"
+        else -> conversationTitle
+    }
+
+private fun ConversationUi.conversationKey(): String =
+    when (type) {
+        ConversationType.Group -> "group:$id"
+        ConversationType.Broadcast -> "broadcast"
+        ConversationType.User, ConversationType.Ai -> "user:$id"
+    }
 
 private fun String.toShortTime(): String =
     when {

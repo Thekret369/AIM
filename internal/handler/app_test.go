@@ -10,12 +10,12 @@ import (
 )
 
 func TestAppHandlerGetAndroidLatestDefaults(t *testing.T) {
-	response := requestAndroidLatest(t, "/api/app/android/latest?version_code=6")
+	response := requestAndroidLatest(t, "/api/app/android/latest?version_code=7")
 
 	if response.HasUpdate {
 		t.Fatal("expected current default version to be latest")
 	}
-	if response.LatestVersionCode != 6 || response.LatestVersionName != "0.6.0-debug" {
+	if response.LatestVersionCode != 7 || response.LatestVersionName != "0.7.0-debug" {
 		t.Fatalf("unexpected default version: %+v", response)
 	}
 	if response.Requirement != "Optional" {

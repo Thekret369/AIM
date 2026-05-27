@@ -1,6 +1,7 @@
 package com.lanline.app.feature.profile
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Sync
@@ -51,6 +53,7 @@ fun ProfileScreen(
     session: AuthSession?,
     realtimeState: RealtimeConnectionState,
     updateInfo: AppUpdateInfo?,
+    onLogout: () -> Unit,
 ) {
     var notificationEnabled by rememberSaveable { mutableStateOf(true) }
 
@@ -90,6 +93,15 @@ fun ProfileScreen(
                     icon = Icons.Default.Sync,
                     title = "连接状态",
                     subtitle = "WebSocket ${realtimeState.label} · 当前 ${LanLineBuildInfo.VersionName}",
+                )
+            }
+            item {
+                SettingRow(
+                    icon = Icons.AutoMirrored.Filled.Logout,
+                    title = "退出登录",
+                    subtitle = "清除本机登录态并返回登录页",
+                    danger = true,
+                    onClick = onLogout,
                 )
             }
             item { Spacer(Modifier.height(88.dp)) }
@@ -140,9 +152,14 @@ private fun SettingRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
+    danger: Boolean = false,
+    onClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = LanLineColors.Surface),
         border = BorderStroke(1.dp, LanLineColors.Line),
@@ -154,9 +171,14 @@ private fun SettingRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(icon, contentDescription = null, tint = LanLineColors.Primary)
+            Icon(icon, contentDescription = null, tint = if (danger) LanLineColors.Danger else LanLineColors.Primary)
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = LanLineColors.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    title,
+                    color = if (danger) LanLineColors.Danger else LanLineColors.Text,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                )
                 Text(subtitle, color = LanLineColors.Muted, fontSize = 11.sp, lineHeight = 16.sp)
             }
             trailing?.invoke()

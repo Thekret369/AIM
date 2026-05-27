@@ -19,8 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Search
@@ -60,7 +60,7 @@ private data class NavSpec(
 )
 
 private val mainNav = listOf(
-    NavSpec(LanLineRoute.Chats, "消息", Icons.Default.Chat),
+    NavSpec(LanLineRoute.Chats, "消息", Icons.AutoMirrored.Filled.Chat),
     NavSpec(LanLineRoute.Contacts, "联系人", Icons.Default.People),
     NavSpec(LanLineRoute.Groups, "群组", Icons.Default.Groups),
     NavSpec(LanLineRoute.Ai, "AI", Icons.Default.AutoAwesome),

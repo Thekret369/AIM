@@ -19,6 +19,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.lanline.app.core.auth.AuthSessionStore
 import com.lanline.app.core.app.LanLineBuildInfo
 import com.lanline.app.core.auth.AuthSession
 import com.lanline.app.core.backend.LanLineBackendRepository
@@ -54,9 +55,11 @@ fun LanLineApp() {
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val scope = rememberCoroutineScope()
     val notifier = remember(context) { LocalMessageNotifier(context.applicationContext) }
+    val sessionStore = remember(context) { AuthSessionStore(context.applicationContext) }
+    val restoredSession = remember(sessionStore) { sessionStore.load() }
     val serverConfig = remember { ServerConfig() }
-    var routeName by rememberSaveable { mutableStateOf(LanLineRoute.Login.name) }
-    var session by remember { mutableStateOf<AuthSession?>(null) }
+    var routeName by rememberSaveable { mutableStateOf(if (restoredSession == null) LanLineRoute.Login.name else LanLineRoute.Chats.name) }
+    var session by remember { mutableStateOf(restoredSession) }
     var realtimeClient by remember { mutableStateOf<LanLineRealtimeClient?>(null) }
     var realtimeState by remember { mutableStateOf(RealtimeConnectionState.Idle) }
     var realtimeMessages by remember { mutableStateOf<List<RealtimeChatMessage>>(emptyList()) }
@@ -67,6 +70,20 @@ fun LanLineApp() {
     var historyStatus by remember { mutableStateOf("请选择会话") }
     val route = LanLineRoute.valueOf(routeName)
     val navigate: (LanLineRoute) -> Unit = { next -> routeName = next.name }
+
+    fun clearLocalSession(previousSession: AuthSession?) {
+        sessionStore.clear()
+        session = null
+        updateInfo = null
+        backendSnapshot = BackendSnapshot()
+        selectedConversation = null
+        historyMessages = emptyList()
+        realtimeMessages = emptyList()
+        navigate(LanLineRoute.Login)
+        previousSession?.let { oldSession ->
+            scope.launch { LanLineBackendRepository(oldSession).logout() }
+        }
+    }
 
     suspend fun reloadSnapshot(activeSession: AuthSession) {
         backendSnapshot = BackendSnapshot(statusText = "正在同步")
@@ -171,6 +188,7 @@ fun LanLineApp() {
                 LanLineRoute.Login -> LoginScreen(
                     config = serverConfig,
                     onLogin = { nextSession ->
+                        sessionStore.save(nextSession)
                         session = nextSession
                         navigate(LanLineRoute.Chats)
                     },
@@ -180,6 +198,7 @@ fun LanLineApp() {
                     onNavigate = navigate,
                     realtimeState = realtimeState,
                     realtimeMessages = realtimeMessages,
+                    currentUserId = session?.user?.id,
                     conversations = backendSnapshot.conversations,
                     backendStatus = backendSnapshot.statusText,
                     onOpenChat = { conversation ->
@@ -245,6 +264,7 @@ fun LanLineApp() {
                     session = session,
                     realtimeState = realtimeState,
                     updateInfo = updateInfo,
+                    onLogout = { clearLocalSession(session) },
                 )
             }
         }

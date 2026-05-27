@@ -34,6 +34,7 @@ data class ConversationUi(
     val avatarText: String,
     val lastMessage: String,
     val timeText: String,
+    val sortEpochMillis: Long = 0L,
     val unreadCount: Int = 0,
     val online: Boolean = false,
     val accent: Color = LanLineColors.Primary,

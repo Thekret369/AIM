@@ -165,6 +165,9 @@ class LanLineBackendRepository(
     suspend fun handleFriendRequest(requestId: Long, accept: Boolean): Result<Unit> =
         runCatching { api.handleFriendRequest(requestId, accept) }.map { }
 
+    suspend fun logout(): Result<Unit> =
+        runCatching { api.logout() }.map { }
+
     suspend fun deleteFriend(friendId: Long): Result<Unit> =
         runCatching { api.deleteFriend(friendId) }.map { }
 
