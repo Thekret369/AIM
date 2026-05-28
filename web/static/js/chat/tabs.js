@@ -5,6 +5,11 @@ function openOrSwitchTab(key, type, targetId, name) {
     else { createTab(key, type, targetId, name); switchToTab(key); loadHistory(key, 1); }
     unreadCounts.set(key, 0);
     updateSidebarBadge(key); updateTabBadge(key); renderSidebar();
+    setMobileChatOpen(true);
+}
+
+function setMobileChatOpen(open) {
+    document.body.classList.toggle('mobile-chat-open', !!open);
 }
 
 function createTab(key, type, targetId, name) {
@@ -22,6 +27,7 @@ function createTab(key, type, targetId, name) {
     if (type === 'group') {
         panelEl.innerHTML =
             '<div class="chat-header">' +
+                '<button class="mobile-chat-back" type="button" aria-label="返回会话">‹</button>' +
                 '<span class="chat-title">' + escapeHtml(name) + '</span>' +
                 '<div class="chat-header-actions">' +
                     '<input class="chat-search-input" type="search" placeholder="搜索消息">' +
@@ -43,6 +49,7 @@ function createTab(key, type, targetId, name) {
     } else {
         panelEl.innerHTML =
             '<div class="chat-header">' +
+                '<button class="mobile-chat-back" type="button" aria-label="返回会话">‹</button>' +
                 '<span class="chat-title">' + escapeHtml(name) + '</span>' +
                 '<div class="chat-header-actions">' +
                     '<input class="chat-search-input" type="search" placeholder="搜索消息">' +
@@ -146,6 +153,11 @@ function createTab(key, type, targetId, name) {
     });
 
     var headerEl = panelEl.querySelector('.chat-header');
+    headerEl.querySelector('.mobile-chat-back').addEventListener('click', function(e) {
+        e.stopPropagation();
+        setMobileChatOpen(false);
+        inputEl.blur();
+    });
 
     chatTabs.set(key, {
         type: type, targetId: targetId, name: name,
@@ -172,6 +184,7 @@ function switchToTab(key) {
     var tab = chatTabs.get(key);
     tab.panelEl.classList.remove('hidden'); tab.tabEl.classList.add('active');
     activeTabKey = key; tab.inputEl.focus();
+    setMobileChatOpen(true);
     var placeholder = document.getElementById('noChatPlaceholder');
     if (placeholder) placeholder.style.display = 'none';
     document.querySelectorAll('.sidebar-item').forEach(function(el) {
@@ -199,7 +212,7 @@ function closeTab(key) {
     if (wasActive) {
         activeTabKey = null;
         if (fallbackKey) switchToTab(fallbackKey);
-        else { var ph = document.getElementById('noChatPlaceholder'); if (ph) ph.style.display = ''; }
+        else { var ph = document.getElementById('noChatPlaceholder'); if (ph) ph.style.display = ''; setMobileChatOpen(false); }
     }
 }
 
