@@ -36,45 +36,49 @@ function canRecallMessage(msg) {
     return Date.now() - createdAt <= MESSAGE_RECALL_WINDOW_MS;
 }
 
+function renderMessageBody(msg) {
+    if (msg.is_recalled) {
+        return '<div class="msg-recalled">消息已撤回</div>';
+    }
+
+    var body = '';
+    switch (msg.type) {
+        case 'image':
+            var src = msg.thumbnail_url || msg.content;
+            body = '<div class="msg-image"><img src="' + escapeHtml(src) + '" loading="lazy" onclick="viewImage(\'' + escapeHtml(msg.content) + '\')"></div>';
+            break;
+        case 'file':
+            body = '<div class="msg-file">' +
+                '<div class="file-icon">📄</div>' +
+                '<div class="file-info">' +
+                    '<div class="file-name" title="' + escapeHtml(msg.file_name || '') + '">' + escapeHtml(msg.file_name || '未知文件') + '</div>' +
+                    '<div class="file-size">' + formatFileSize(msg.file_size || 0) + '</div>' +
+                '</div>' +
+                '<a class="file-download" href="' + escapeHtml(msg.content) + '" download="' + escapeHtml(msg.file_name || '') + '">下载</a>' +
+            '</div>';
+            break;
+        case 'audio':
+            body = '<div class="msg-audio"><audio controls src="' + escapeHtml(msg.content) + '"></audio></div>';
+            break;
+        default:
+            if (msg._streaming) {
+                var streamText = msg.content ? escapeHtml(msg.content) : '<span class="msg-stream-placeholder">正在生成</span>';
+                body = '<span class="msg-stream-text">' + streamText + '</span><span class="msg-stream-cursor"></span>';
+            } else {
+                body = escapeHtml(msg.content);
+            }
+            if (msg._stream_error) {
+                body += '<div class="msg-stream-error">生成失败</div>';
+            }
+    }
+    return body;
+}
+
 function renderOneMessage(msg) {
     var isMe = msg.from_user_id === getUserId();
     var cls = isMe ? 'from-me' : '';
     if (msg.is_recalled) cls += ' recalled';
     var name = msg.from_user ? (msg.from_user.nickname || msg.from_user.username) : ('用户' + msg.from_user_id);
-    var body = '';
-    if (msg.is_recalled) {
-        body = '<div class="msg-recalled">消息已撤回</div>';
-    } else {
-        switch (msg.type) {
-            case 'image':
-                var src = msg.thumbnail_url || msg.content;
-                body = '<div class="msg-image"><img src="' + escapeHtml(src) + '" loading="lazy" onclick="viewImage(\'' + escapeHtml(msg.content) + '\')"></div>';
-                break;
-            case 'file':
-                body = '<div class="msg-file">' +
-                    '<div class="file-icon">📄</div>' +
-                    '<div class="file-info">' +
-                        '<div class="file-name" title="' + escapeHtml(msg.file_name || '') + '">' + escapeHtml(msg.file_name || '未知文件') + '</div>' +
-                        '<div class="file-size">' + formatFileSize(msg.file_size || 0) + '</div>' +
-                    '</div>' +
-                    '<a class="file-download" href="' + escapeHtml(msg.content) + '" download="' + escapeHtml(msg.file_name || '') + '">下载</a>' +
-                '</div>';
-                break;
-            case 'audio':
-                body = '<div class="msg-audio"><audio controls src="' + escapeHtml(msg.content) + '"></audio></div>';
-                break;
-            default:
-                if (msg._streaming) {
-                    var streamText = msg.content ? escapeHtml(msg.content) : '<span class="msg-stream-placeholder">正在生成</span>';
-                    body = '<span class="msg-stream-text">' + streamText + '</span><span class="msg-stream-cursor"></span>';
-                } else {
-                    body = escapeHtml(msg.content);
-                }
-                if (msg._stream_error) {
-                    body += '<div class="msg-stream-error">生成失败</div>';
-                }
-        }
-    }
     var timeStr = formatMsgTime(msg.created_at);
     var quoteHTML = msg.is_recalled ? '' : renderQuoteMessage(msg.quote_message);
     var quoteAction = (!msg.is_recalled && (msg.to_user_id || msg.group_id))
@@ -91,7 +95,7 @@ function renderOneMessage(msg) {
             '<div class="meta"><a href="/profile?user_id=' + msg.from_user_id + '" class="text-link">' + escapeHtml(name) + '</a>' +
             (timeStr ? ' <span class="msg-time">' + timeStr + '</span>' : '') + quoteAction + recallAction + deleteAction + '</div>' +
             quoteHTML +
-            body +
+            '<div class="msg-body">' + renderMessageBody(msg) + '</div>' +
         '</div>' +
     '</div>';
     if (typeof injectReadMark === 'function') html = injectReadMark(html, msg);
@@ -116,6 +120,20 @@ function renderAllMessages(tab) {
     var html = '';
     for (var i = 0; i < tab.messages.length; i++) html += renderOneMessage(tab.messages[i]);
     tab.messagesEl.innerHTML = html;
+}
+
+function updateMessageElement(tab, msg) {
+    if (!tab || !msg || !msg.id || !tab.messagesEl) return false;
+    var el = tab.messagesEl.querySelector('.msg[data-msg-id="' + msg.id + '"]');
+    if (!el) return false;
+    var bodyEl = el.querySelector('.msg-body');
+    if (!bodyEl) return false;
+
+    var cls = msg.from_user_id === getUserId() ? 'msg from-me' : 'msg';
+    if (msg.is_recalled) cls += ' recalled';
+    el.className = cls;
+    bodyEl.innerHTML = renderMessageBody(msg);
+    return true;
 }
 
 function findTabMessage(tab, msgId) {

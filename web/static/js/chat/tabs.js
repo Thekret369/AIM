@@ -57,6 +57,7 @@ function createTab(key, type, targetId, name) {
                     '<input class="chat-search-end" type="datetime-local" title="结束时间">' +
                     '<button class="chat-search-btn" type="button">搜索</button>' +
                     '<button class="chat-search-clear hidden" type="button" title="清除搜索">&times;</button>' +
+                    '<button class="ai-context-reset-btn hidden" type="button" title="清除蓝妹上下文">清记忆</button>' +
                 '</div>' +
             '</div>' +
             '<div class="chat-search-results hidden"></div>' +
@@ -76,6 +77,7 @@ function createTab(key, type, targetId, name) {
     var searchEndEl = panelEl.querySelector('.chat-search-end');
     var searchBtnEl = panelEl.querySelector('.chat-search-btn');
     var searchClearEl = panelEl.querySelector('.chat-search-clear');
+    var contextResetBtnEl = panelEl.querySelector('.ai-context-reset-btn');
     var searchResultsEl = panelEl.querySelector('.chat-search-results');
     var quoteComposeEl = panelEl.querySelector('.quote-compose');
     inputEl.addEventListener('keydown', function(e) {
@@ -104,6 +106,13 @@ function createTab(key, type, targetId, name) {
             }
         });
     });
+    if (contextResetBtnEl && type === 'user' && typeof findAIBotByUserID === 'function' && findAIBotByUserID(targetId)) {
+        contextResetBtnEl.classList.remove('hidden');
+        contextResetBtnEl.addEventListener('click', function(e) {
+            e.preventDefault();
+            resetAIContext(key, contextResetBtnEl);
+        });
+    }
 
     // 群聊 @ 提及支持
     if (type === 'group') {
@@ -173,6 +182,34 @@ function createTab(key, type, targetId, name) {
         headerEl.querySelector('.group-detail-btn').addEventListener('click', function(e) {
             e.stopPropagation(); toggleGroupPanel(key);
         });
+    }
+}
+
+async function resetAIContext(key, buttonEl) {
+    var tab = chatTabs.get(key);
+    if (!tab || tab.type !== 'user') return;
+    if (!confirm('清除后蓝妹不会再读取此前聊天上下文，历史记录仍保留。继续？')) return;
+
+    var oldText = buttonEl ? buttonEl.textContent : '';
+    if (buttonEl) {
+        buttonEl.disabled = true;
+        buttonEl.textContent = '清除中';
+    }
+    try {
+        await api('POST', '/ai/context/reset', { bot_user_id: tab.targetId });
+        if (buttonEl) {
+            buttonEl.textContent = '已清除';
+            setTimeout(function() {
+                buttonEl.textContent = oldText || '清记忆';
+                buttonEl.disabled = false;
+            }, 1600);
+        }
+    } catch(e) {
+        if (buttonEl) {
+            buttonEl.textContent = oldText || '清记忆';
+            buttonEl.disabled = false;
+        }
+        renderSendFailure(key, null, e.message || '清除上下文失败');
     }
 }
 

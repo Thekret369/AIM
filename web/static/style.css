@@ -338,7 +338,8 @@ body {
 	font-size: 12px;
 }
 .chat-search-btn,
-.chat-search-clear {
+.chat-search-clear,
+.ai-context-reset-btn {
 	border: 1px solid var(--border);
 	background: var(--surface);
 	color: var(--text);
@@ -347,10 +348,12 @@ body {
 	cursor: pointer;
 }
 .chat-search-btn:hover,
-.chat-search-clear:hover {
+.chat-search-clear:hover,
+.ai-context-reset-btn:hover {
 	background: var(--surface-hover);
 }
 .chat-search-clear.hidden,
+.ai-context-reset-btn.hidden,
 .chat-search-results.hidden {
 	display: none;
 }
@@ -1483,7 +1486,8 @@ textarea:focus-visible {
 .btn,
 .gp-btn,
 .chat-search-btn,
-.chat-search-clear {
+.chat-search-clear,
+.ai-context-reset-btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -1502,7 +1506,8 @@ textarea:focus-visible {
 .btn:hover,
 .gp-btn:hover,
 .chat-search-btn:hover,
-.chat-search-clear:hover {
+.chat-search-clear:hover,
+.ai-context-reset-btn:hover {
 	background: var(--surface-hover);
 	border-color: var(--input-border);
 	color: var(--text);
@@ -3061,6 +3066,7 @@ body.theme-dark .no-chat-placeholder {
 	.gp-btn,
 	.chat-search-btn,
 	.chat-search-clear,
+	.ai-context-reset-btn,
 	input,
 	select,
 	textarea {
@@ -3260,6 +3266,7 @@ body.theme-dark .no-chat-placeholder {
 
 	body.chat-page .chat-search-btn,
 	body.chat-page .chat-search-clear,
+	body.chat-page .ai-context-reset-btn,
 	body.chat-page .group-detail-btn {
 		min-height: 38px;
 		padding: 0 10px;
@@ -3356,6 +3363,7 @@ body.theme-dark .no-chat-placeholder {
 
 	body.chat-page .chat-search-btn,
 	body.chat-page .chat-search-clear,
+	body.chat-page .ai-context-reset-btn,
 	body.chat-page .group-detail-btn {
 		flex: 0 0 auto;
 	}

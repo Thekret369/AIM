@@ -65,10 +65,14 @@ onMessage = function(msg) {
 
     if (chatTabs.has(key)) {
         var tab = chatTabs.get(key);
+        var existing = findTabMessage(tab, msg.id);
+        var wasStreaming = existing && existing._streaming;
         var added = upsertMessage(tab.messages, msg);
         if (!added) {
             if (key === activeTabKey) {
-                renderAllMessages(tab);
+                if (!wasStreaming || !updateMessageElement(tab, findTabMessage(tab, msg.id))) {
+                    renderAllMessages(tab);
+                }
                 tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
             }
         } else if (key === activeTabKey) {
@@ -133,7 +137,9 @@ onAIStream = function(payload) {
 
     if (found.key === activeTabKey) {
         var nearBottom = tab.messagesEl.scrollHeight - tab.messagesEl.scrollTop - tab.messagesEl.clientHeight < 96;
-        renderAllMessages(tab);
+        if (!updateMessageElement(tab, msg)) {
+            renderAllMessages(tab);
+        }
         if (nearBottom) tab.messagesEl.scrollTop = tab.messagesEl.scrollHeight;
     }
 };
