@@ -66,6 +66,7 @@ func InitDB(driver, dsn string) error {
 		&AIKnowledgeDocument{},
 		&AIBotKnowledgeBase{},
 		&AITokenUsage{},
+		&AIContextReset{},
 		&SchemaMigration{},
 	)
 	if err != nil {
@@ -111,7 +112,7 @@ func EnsureIndexes() error {
 	if DB == nil {
 		return errors.New("database is not initialized")
 	}
-	if err := DB.AutoMigrate(&SchemaMigration{}, &MessageDeletion{}); err != nil {
+	if err := DB.AutoMigrate(&SchemaMigration{}, &MessageDeletion{}, &AIContextReset{}); err != nil {
 		return err
 	}
 	for _, migration := range schemaMigrations() {

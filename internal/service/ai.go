@@ -16,6 +16,7 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const disabledAIPassword = "AI_USER_DISABLED_LOGIN"
@@ -81,6 +82,22 @@ type AIBotUsageSummary struct {
 	TotalTokens      int64   `json:"total_tokens"`
 	BillableTokens   int64   `json:"billable_tokens"`
 	TotalCostCNY     float64 `json:"total_cost_cny"`
+}
+
+// AIContextResetInput 描述要切断的 AI 上下文范围。
+type AIContextResetInput struct {
+	BotUserID uint
+	GroupID   *uint
+}
+
+// AIContextResetInfo 是上下文重置后的可返回信息。
+type AIContextResetInfo struct {
+	BotUserID           uint      `json:"bot_user_id"`
+	UserID              uint      `json:"user_id"`
+	ConversationType    string    `json:"conversation_type"`
+	ConversationID      uint      `json:"conversation_id"`
+	ResetAfterMessageID uint      `json:"reset_after_message_id"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // AIBotInfo 是返回给前端的 AI 用户信息，不包含 API Key 明文。
@@ -421,6 +438,75 @@ func (s *AIService) DeleteUserBot(ownerID, botID uint) error {
 		return err
 	}
 	return model.DB.Model(&bot).Update("status", model.AIBotStatusDeleted).Error
+}
+
+// ResetContext 只重置 AI 后续读取的上下文，不删除历史聊天记录。
+func (s *AIService) ResetContext(ownerID uint, input AIContextResetInput) (*AIContextResetInfo, error) {
+	if ownerID == 0 {
+		return nil, errors.New("用户未登录")
+	}
+	if input.BotUserID == 0 {
+		return nil, errors.New("无效的 AI 用户")
+	}
+
+	runtime, err := s.loadRuntimeByUserID(input.BotUserID)
+	if err != nil {
+		return nil, err
+	}
+	if !s.canUserUseRuntime(ownerID, runtime) {
+		return nil, errors.New("无权重置该 AI 上下文")
+	}
+
+	conversationType := model.AIContextConversationUser
+	conversationID := input.BotUserID
+	var resetAfter uint
+	if input.GroupID != nil && *input.GroupID != 0 {
+		conversationType = model.AIContextConversationGroup
+		conversationID = *input.GroupID
+		if err := s.validateGroupContextReset(ownerID, input.BotUserID, conversationID); err != nil {
+			return nil, err
+		}
+		resetAfter, err = s.latestGroupMessageID(conversationID)
+	} else {
+		resetAfter, err = s.latestDirectContextMessageID(input.BotUserID, ownerID)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	reset := model.AIContextReset{
+		BotUserID:           input.BotUserID,
+		UserID:              ownerID,
+		ConversationType:    conversationType,
+		ConversationID:      conversationID,
+		ResetAfterMessageID: resetAfter,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}
+	if err := model.DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "bot_user_id"},
+			{Name: "user_id"},
+			{Name: "conversation_type"},
+			{Name: "conversation_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"reset_after_message_id": resetAfter,
+			"updated_at":             now,
+		}),
+	}).Create(&reset).Error; err != nil {
+		return nil, err
+	}
+
+	return &AIContextResetInfo{
+		BotUserID:           reset.BotUserID,
+		UserID:              reset.UserID,
+		ConversationType:    reset.ConversationType,
+		ConversationID:      reset.ConversationID,
+		ResetAfterMessageID: reset.ResetAfterMessageID,
+		UpdatedAt:           reset.UpdatedAt,
+	}, nil
 }
 
 // HandleMessage 在普通消息入库后异步触发 AI 回复。
@@ -906,9 +992,14 @@ func (s *AIService) loadContextMessages(runtime *aiRuntime, source *model.Messag
 
 func (s *AIService) loadDirectContextMessages(botID, peerID, beforeOrEqualID uint, limit int) ([]model.Message, error) {
 	var messages []model.Message
+	resetAfter, err := s.contextResetAfterMessageID(botID, peerID, model.AIContextConversationUser, botID)
+	if err != nil {
+		return nil, err
+	}
 
-	err := model.DB.Preload("FromUser").
+	err = model.DB.Preload("FromUser").
 		Where("id <= ? AND group_id IS NULL AND to_user_id IS NOT NULL", beforeOrEqualID).
+		Where("id > ?", resetAfter).
 		Where("is_recalled = ?", false).
 		Where(
 			"(from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
@@ -930,6 +1021,10 @@ func (s *AIService) loadGroupContextMessages(runtime *aiRuntime, source *model.M
 	}
 
 	var messages []model.Message
+	resetAfter, err := s.contextResetAfterMessageID(runtime.User.ID, source.FromUserID, model.AIContextConversationGroup, *source.GroupID)
+	if err != nil {
+		return nil, err
+	}
 	scanLimit := limit * 4
 	if scanLimit < limit {
 		scanLimit = limit
@@ -937,6 +1032,7 @@ func (s *AIService) loadGroupContextMessages(runtime *aiRuntime, source *model.M
 
 	if err := model.DB.Preload("FromUser").
 		Where("id <= ? AND group_id = ?", source.ID, *source.GroupID).
+		Where("id > ?", resetAfter).
 		Where("is_recalled = ?", false).
 		Order("id DESC").
 		Limit(scanLimit).
@@ -955,6 +1051,83 @@ func (s *AIService) loadGroupContextMessages(runtime *aiRuntime, source *model.M
 	}
 	reverseMessages(filtered)
 	return filtered, nil
+}
+
+func (s *AIService) canUserUseRuntime(ownerID uint, runtime *aiRuntime) bool {
+	if runtime == nil {
+		return false
+	}
+	if runtime.Bot == nil {
+		return true
+	}
+	if runtime.Bot.IsSystem {
+		return true
+	}
+	return runtime.Bot.OwnerID != nil && *runtime.Bot.OwnerID == ownerID
+}
+
+func (s *AIService) validateGroupContextReset(ownerID, botUserID, groupID uint) error {
+	for _, userID := range []uint{ownerID, botUserID} {
+		var count int64
+		if err := model.DB.Model(&model.GroupMember{}).
+			Where("group_id = ? AND user_id = ?", groupID, userID).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return errors.New("用户或 AI 不在该群聊中")
+		}
+	}
+	return nil
+}
+
+func (s *AIService) latestDirectContextMessageID(botID, peerID uint) (uint, error) {
+	var msg model.Message
+	err := model.DB.
+		Where("group_id IS NULL AND to_user_id IS NOT NULL").
+		Where(
+			"(from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
+			peerID, botID, botID, peerID,
+		).
+		Order("id DESC").
+		First(&msg).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return msg.ID, nil
+}
+
+func (s *AIService) latestGroupMessageID(groupID uint) (uint, error) {
+	var msg model.Message
+	err := model.DB.
+		Where("group_id = ?", groupID).
+		Order("id DESC").
+		First(&msg).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return msg.ID, nil
+}
+
+func (s *AIService) contextResetAfterMessageID(botID, userID uint, conversationType string, conversationID uint) (uint, error) {
+	var reset model.AIContextReset
+	err := model.DB.
+		Where("bot_user_id = ? AND user_id = ? AND conversation_type = ? AND conversation_id = ?",
+			botID, userID, conversationType, conversationID).
+		First(&reset).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return reset.ResetAfterMessageID, nil
 }
 
 func (s *AIService) isRelevantGroupAIContextMessage(bot model.User, sourceUserID, sourceMessageID uint, msg model.Message) bool {

@@ -184,6 +184,7 @@ func main() {
 		auth.POST("/ai/bots", aiH.CreateBot)
 		auth.PUT("/ai/bots/:id", aiH.UpdateBot)
 		auth.DELETE("/ai/bots/:id", aiH.DeleteBot)
+		auth.POST("/ai/context/reset", aiH.ResetContext)
 		auth.GET("/ai/token-usages", aiH.ListTokenUsages)
 		auth.GET("/ai/knowledge-bases", aiH.ListKnowledgeBases)
 		auth.POST("/ai/knowledge-bases", aiH.CreateKnowledgeBase)
