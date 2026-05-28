@@ -254,6 +254,21 @@ function applyFontSize(size) {
     else if (size === 'large') document.body.classList.add('font-large');
 }
 
+// Keep compact mobile navigation oriented around the current page.
+function markActiveNav() {
+    var path = window.location.pathname;
+    document.querySelectorAll('.nav a[href]').forEach(function(link) {
+        var href = link.getAttribute('href') || '';
+        link.classList.toggle('nav-active', href === path);
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', markActiveNav);
+} else {
+    markActiveNav();
+}
+
 // 从服务端加载设置并启用 WebSocket（所有页面在初始化时调用）
 async function loadAndApplySettings() {
     try {
