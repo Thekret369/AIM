@@ -55,6 +55,11 @@ type aiKnowledgeDocumentReq struct {
 	Content string `json:"content" binding:"required"`
 }
 
+type aiContextResetReq struct {
+	BotUserID uint  `json:"bot_user_id" binding:"required"`
+	GroupID   *uint `json:"group_id"`
+}
+
 func (h *AIHandler) ListBots(c *gin.Context) {
 	if h.Svc == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 功能未启用"})
@@ -158,6 +163,29 @@ func (h *AIHandler) DeleteBot(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"msg": "AI 助手已删除"})
+}
+
+func (h *AIHandler) ResetContext(c *gin.Context) {
+	if h.Svc == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 功能未启用"})
+		return
+	}
+
+	var req aiContextResetReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		return
+	}
+
+	reset, err := h.Svc.ResetContext(c.GetUint("user_id"), service.AIContextResetInput{
+		BotUserID: req.BotUserID,
+		GroupID:   req.GroupID,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"msg": "蓝妹上下文已清除", "reset": reset})
 }
 
 func (h *AIHandler) ListTokenUsages(c *gin.Context) {

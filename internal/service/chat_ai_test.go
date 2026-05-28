@@ -313,6 +313,55 @@ func TestAIDirectContextIsIsolatedPerUser(t *testing.T) {
 	}
 }
 
+func TestAIDirectContextResetKeepsHistoryButExcludesOldPrompt(t *testing.T) {
+	chatSvc, _ := setupChatSecurityTest(t)
+	user := createSecurityUser(t, "ai_reset_user")
+	bot := createAIUser(t, "ai_reset_bot")
+
+	toBot := bot.ID
+	toUser := user.ID
+	history := []*model.Message{
+		{Type: model.MsgText, FromUserID: user.ID, ToUserID: &toBot, Content: "old-user-context"},
+		{Type: model.MsgText, FromUserID: bot.ID, ToUserID: &toUser, Content: "old-assistant-context"},
+	}
+	for _, msg := range history {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("seed reset history: %v", err)
+		}
+	}
+
+	fake := &fakeAIClient{reply: "reset reply", calls: make(chan ai.ChatRequest, 1)}
+	aiSvc := NewAIService(fake, chatSvc, AIConfig{
+		MaxContextMessages: 8,
+		Timeout:            time.Second,
+	})
+	chatSvc.AIResponder = aiSvc
+
+	reset, err := aiSvc.ResetContext(user.ID, AIContextResetInput{BotUserID: bot.ID})
+	if err != nil {
+		t.Fatalf("reset direct context: %v", err)
+	}
+	if reset.ResetAfterMessageID != history[len(history)-1].ID {
+		t.Fatalf("expected reset after latest history id %d, got %d", history[len(history)-1].ID, reset.ResetAfterMessageID)
+	}
+
+	if err := chatSvc.SendFromClient(&model.Message{
+		Type:       model.MsgText,
+		FromUserID: user.ID,
+		ToUserID:   &toBot,
+		Content:    "new-question-after-reset",
+	}); err != nil {
+		t.Fatalf("send post-reset ai message: %v", err)
+	}
+	req := waitAIRequest(t, fake.calls)
+	if promptContains(req, "old-user-context") || promptContains(req, "old-assistant-context") {
+		t.Fatalf("expected reset prompt to exclude old context, got %+v", req.Messages)
+	}
+	if !promptContains(req, "new-question-after-reset") {
+		t.Fatalf("expected prompt to include current message, got %+v", req.Messages)
+	}
+}
+
 func TestAIUserGroupMentionCreatesReply(t *testing.T) {
 	chatSvc, groupSvc := setupChatSecurityTest(t)
 	owner := createSecurityUser(t, "ai_group_owner")
@@ -362,6 +411,67 @@ func TestAIUserGroupMentionCreatesReply(t *testing.T) {
 	}
 	if reply.QuoteMessageID == nil || *reply.QuoteMessageID != source.ID {
 		t.Fatalf("expected group reply to quote source message %d, got %+v", source.ID, reply.QuoteMessageID)
+	}
+}
+
+func TestAIGroupContextResetExcludesOldMentionThread(t *testing.T) {
+	chatSvc, groupSvc := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_group_reset_owner")
+	member := createSecurityUser(t, "ai_group_reset_member")
+	bot := createAIUser(t, "ai_group_reset_bot")
+
+	group, err := groupSvc.CreateGroup("ai_group_reset", "", owner.ID)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	for _, uid := range []uint{member.ID, bot.ID} {
+		if err := groupSvc.JoinGroup(group.ID, uid); err != nil {
+			t.Fatalf("join group member %d: %v", uid, err)
+		}
+	}
+
+	seed := []*model.Message{
+		{Type: model.MsgText, FromUserID: member.ID, GroupID: &group.ID, Content: "@ai_group_reset_bot old group question", Mentions: fmt.Sprintf("[%d]", bot.ID)},
+		{Type: model.MsgText, FromUserID: bot.ID, GroupID: &group.ID, Content: "old group answer", Mentions: fmt.Sprintf("[%d]", member.ID)},
+	}
+	for _, msg := range seed {
+		if err := model.DB.Create(msg).Error; err != nil {
+			t.Fatalf("seed group reset context: %v", err)
+		}
+	}
+
+	fake := &fakeAIClient{reply: "group reset reply", calls: make(chan ai.ChatRequest, 1)}
+	aiSvc := NewAIService(fake, chatSvc, AIConfig{
+		MaxContextMessages: 8,
+		Timeout:            time.Second,
+	})
+	chatSvc.AIResponder = aiSvc
+
+	reset, err := aiSvc.ResetContext(member.ID, AIContextResetInput{BotUserID: bot.ID, GroupID: &group.ID})
+	if err != nil {
+		t.Fatalf("reset group context: %v", err)
+	}
+	if reset.ConversationType != model.AIContextConversationGroup || reset.ResetAfterMessageID != seed[len(seed)-1].ID {
+		t.Fatalf("unexpected group reset info: %+v", reset)
+	}
+
+	source := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: member.ID,
+		GroupID:    &group.ID,
+		Content:    "@ai_group_reset_bot new group question",
+		Mentions:   fmt.Sprintf("[%d]", bot.ID),
+	}
+	if err := chatSvc.SendFromClient(source); err != nil {
+		t.Fatalf("send group ai mention after reset: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	if promptContains(req, "old group question") || promptContains(req, "old group answer") {
+		t.Fatalf("expected group reset prompt to exclude old context, got %+v", req.Messages)
+	}
+	if !promptContains(req, "new group question") {
+		t.Fatalf("expected group reset prompt to include current message, got %+v", req.Messages)
 	}
 }
 
