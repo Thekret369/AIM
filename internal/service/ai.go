@@ -953,6 +953,10 @@ func (s *AIService) buildPrompt(runtime *aiRuntime, source *model.Message) ([]ai
 	if err != nil {
 		return nil, err
 	}
+	quote, err := s.loadReadableQuoteMessage(source)
+	if err != nil {
+		return nil, err
+	}
 
 	messages := []ai.ChatMessage{{Role: "system", Content: systemPrompt}}
 	for _, msg := range history {
@@ -960,15 +964,89 @@ func (s *AIService) buildPrompt(runtime *aiRuntime, source *model.Message) ([]ai
 			continue
 		}
 		role := "user"
-		content := msg.Content
+		content := s.formatPromptMessageContent(source, &msg, quote)
 		if msg.FromUserID == runtime.User.ID {
 			role = "assistant"
 		} else if source.IsToGroup() {
-			content = fmt.Sprintf("%s: %s", displayUserName(msg.FromUser), msg.Content)
+			content = fmt.Sprintf("%s: %s", displayUserName(msg.FromUser), content)
 		}
 		messages = append(messages, ai.ChatMessage{Role: role, Content: content})
 	}
 	return messages, nil
+}
+
+// formatPromptMessageContent keeps quoted text next to the current request so references like "this message" are clear.
+func (s *AIService) formatPromptMessageContent(source, msg *model.Message, quote *model.Message) string {
+	content := msg.Content
+	if source == nil || msg == nil || quote == nil || msg.ID != source.ID {
+		return content
+	}
+	if quote.Type != model.MsgText || strings.TrimSpace(quote.Content) == "" {
+		return content
+	}
+	return fmt.Sprintf("Referenced message:\n%s: %s\n\nCurrent request:\n%s",
+		quotedMessageAuthorName(quote),
+		strings.TrimSpace(quote.Content),
+		strings.TrimSpace(content),
+	)
+}
+
+func quotedMessageAuthorName(quote *model.Message) string {
+	if quote == nil {
+		return ""
+	}
+	if quote.FromUser.ID != 0 {
+		return displayUserName(quote.FromUser)
+	}
+	return fmt.Sprintf("用户%d", quote.FromUserID)
+}
+
+func (s *AIService) loadReadableQuoteMessage(source *model.Message) (*model.Message, error) {
+	if source == nil || source.QuoteMessageID == nil || *source.QuoteMessageID == 0 {
+		return nil, nil
+	}
+	if source.QuoteMessage != nil && source.QuoteMessage.ID != 0 {
+		if source.QuoteMessage.IsRecalled || alreadyDeletedForUser(model.DB, source.FromUserID, source.QuoteMessage.ID) {
+			return nil, nil
+		}
+		if quoteMessageBelongsToSource(source, source.QuoteMessage) {
+			return source.QuoteMessage, nil
+		}
+	}
+
+	var quote model.Message
+	err := visibleMessagesForUser(model.DB.Preload("FromUser"), source.FromUserID).
+		Where("messages.id = ? AND messages.is_recalled = ?", *source.QuoteMessageID, false).
+		First(&quote).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !quoteMessageBelongsToSource(source, &quote) {
+		return nil, nil
+	}
+	return &quote, nil
+}
+
+func quoteMessageBelongsToSource(source, quote *model.Message) bool {
+	if source == nil || quote == nil {
+		return false
+	}
+	switch {
+	case source.IsToUser():
+		if !quote.IsToUser() || source.ToUserID == nil || quote.ToUserID == nil {
+			return false
+		}
+		sameDirection := source.FromUserID == quote.FromUserID && *source.ToUserID == *quote.ToUserID
+		reverseDirection := source.FromUserID == *quote.ToUserID && *source.ToUserID == quote.FromUserID
+		return sameDirection || reverseDirection
+	case source.IsToGroup():
+		return quote.IsToGroup() && source.GroupID != nil && quote.GroupID != nil && *source.GroupID == *quote.GroupID
+	default:
+		return false
+	}
 }
 
 func (s *AIService) loadContextMessages(runtime *aiRuntime, source *model.Message, limit int) ([]model.Message, error) {

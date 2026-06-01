@@ -414,6 +414,60 @@ func TestAIUserGroupMentionCreatesReply(t *testing.T) {
 	}
 }
 
+func TestAIUserGroupMentionIncludesQuotedMessage(t *testing.T) {
+	chatSvc, groupSvc := setupChatSecurityTest(t)
+	owner := createSecurityUser(t, "ai_group_quote_owner")
+	member := createSecurityUser(t, "ai_group_quote_member")
+	bot := createAIUser(t, "ai_group_quote_bot")
+
+	group, err := groupSvc.CreateGroup("ai_group_quote", "", owner.ID)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	for _, uid := range []uint{member.ID, bot.ID} {
+		if err := groupSvc.JoinGroup(group.ID, uid); err != nil {
+			t.Fatalf("join group member %d: %v", uid, err)
+		}
+	}
+
+	quoted := &model.Message{
+		Type:       model.MsgText,
+		FromUserID: owner.ID,
+		GroupID:    &group.ID,
+		Content:    "quoted requirement: add Redis idempotency check",
+	}
+	if err := model.DB.Create(quoted).Error; err != nil {
+		t.Fatalf("create quoted group message: %v", err)
+	}
+
+	fake := &fakeAIClient{reply: "quoted group reply", calls: make(chan ai.ChatRequest, 1)}
+	chatSvc.AIResponder = NewAIService(fake, chatSvc, AIConfig{
+		MaxContextMessages: 4,
+		Timeout:            time.Second,
+	})
+
+	source := &model.Message{
+		Type:           model.MsgText,
+		FromUserID:     member.ID,
+		GroupID:        &group.ID,
+		Content:        "@ai_group_quote_bot please turn the quote into tasks",
+		Mentions:       fmt.Sprintf("[%d]", bot.ID),
+		QuoteMessageID: &quoted.ID,
+	}
+	if err := chatSvc.SendFromClient(source); err != nil {
+		t.Fatalf("send quoted group ai mention: %v", err)
+	}
+
+	req := waitAIRequest(t, fake.calls)
+	lastUserMessage := lastAIUserMessage(req)
+	if !strings.Contains(lastUserMessage, "quoted requirement: add Redis idempotency check") {
+		t.Fatalf("expected quoted message in prompt, got %+v", req.Messages)
+	}
+	if !strings.Contains(lastUserMessage, "please turn the quote into tasks") {
+		t.Fatalf("expected current request in prompt, got %+v", req.Messages)
+	}
+}
+
 func TestAIGroupContextResetExcludesOldMentionThread(t *testing.T) {
 	chatSvc, groupSvc := setupChatSecurityTest(t)
 	owner := createSecurityUser(t, "ai_group_reset_owner")

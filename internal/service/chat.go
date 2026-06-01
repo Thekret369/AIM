@@ -166,6 +166,9 @@ func (s *ChatService) validateQuoteMessage(msg *model.Message) error {
 	if err := model.DB.First(&quote, *msg.QuoteMessageID).Error; err != nil {
 		return errors.New("引用消息不存在")
 	}
+	if quote.IsRecalled || alreadyDeletedForUser(model.DB, msg.FromUserID, quote.ID) {
+		return errors.New("引用消息不存在或已删除")
+	}
 
 	switch {
 	case msg.IsToUser():
@@ -179,6 +182,10 @@ func (s *ChatService) validateQuoteMessage(msg *model.Message) error {
 		}
 	case msg.IsToGroup():
 		if !quote.IsToGroup() || quote.GroupID == nil || msg.GroupID == nil || *quote.GroupID != *msg.GroupID {
+			return errors.New("引用消息不属于当前群聊")
+		}
+		member, err := s.getGroupMember(*msg.GroupID, msg.FromUserID)
+		if err != nil || quote.CreatedAt.Before(member.CreatedAt) {
 			return errors.New("引用消息不属于当前群聊")
 		}
 	default:
